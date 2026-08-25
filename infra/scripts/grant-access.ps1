@@ -51,6 +51,19 @@ Grant -Scope $sbId -RoleName 'Azure Service Bus Data Receiver' -RoleKey 'sb-recv
 Grant -Scope $stId -RoleName 'Storage Blob Data Contributor' -RoleKey 'blob'
 Grant -Scope $acrId -RoleName 'AcrPull' -RoleKey 'acr'
 
+# Foundry (standalone, Entra-only data plane): UAI + signed-in developer
+$foundryRg = $values['resourceGroupName']
+$foundryName = $values['foundryAccountName']
+if ($foundryName) {
+    $foundryId = az cognitiveservices account show -g $foundryRg -n $foundryName --query id -o tsv
+    Grant -Scope $foundryId -RoleName 'Cognitive Services User' -RoleKey 'foundry-uai'
+    $me = az ad signed-in-user show --query id -o tsv
+    $myAssign = New-DeterministicGuid $foundryId 'foundry-dev' $me
+    az role assignment create --assignee-object-id $me --assignee-principal-type User `
+        --scope $foundryId --role (Resolve-RoleId 'Cognitive Services User') --name $myAssign 2>&1 | Out-Null
+    Write-Host "granted 'Cognitive Services User' to signed-in developer"
+}
+
 # Cosmos native SQL RBAC: built-in contributor is account-scoped.
 $builtinDefId = "$cosmosId/sqlRoleDefinitions/00000000-0000-0000-0000-000000000001"
 $assignName = New-DeterministicGuid $cosmosId 'cosmos-data' $PrincipalId

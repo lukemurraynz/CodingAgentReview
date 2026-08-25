@@ -9,9 +9,7 @@ param cosmosEndpoint string
 @secure()
 param githubWebhookSecret string
 param foundryEndpoint string
-@secure()
-@allowed(['', 'PLACEHOLDER'])
-param foundryApiKey string = 'PLACEHOLDER'
+param foundryDeployment string
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: name
@@ -27,7 +25,6 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
     ]
       secrets: [
         { name: 'github-webhook-secret', value: githubWebhookSecret }
-        { name: 'foundry-api-key', value: foundryApiKey }
       ]
       ingress: {
         external: true
@@ -47,7 +44,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'HARNESS_COSMOS_ENDPOINT', value: cosmosEndpoint }
             { name: 'HARNESS_GITHUB_WEBHOOK_SECRET', secretRef: 'github-webhook-secret' }
             { name: 'HARNESS_FOUNDRY_ENDPOINT', value: foundryEndpoint }
-            { name: 'HARNESS_FOUNDRY_API_KEY', secretRef: 'foundry-api-key' }
+            { name: 'HARNESS_FOUNDRY_DEPLOYMENT', value: foundryDeployment }
           ]
         }
       ]

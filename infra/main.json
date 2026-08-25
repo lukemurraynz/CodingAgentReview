@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.43.8.12551",
-      "templateHash": "4573486105208222282"
+      "templateHash": "16410926500346122272"
     }
   },
   "parameters": {
@@ -19,10 +19,6 @@
     },
     "githubWebhookSecret": {
       "type": "securestring"
-    },
-    "foundryEndpoint": {
-      "type": "string",
-      "defaultValue": ""
     },
     "foundryApiKey": {
       "type": "securestring",
@@ -53,7 +49,8 @@
     "sbName": "[format('sb-{0}', parameters('namePrefix'))]",
     "cosmosName": "[format('cos-{0}', replace(parameters('namePrefix'), '-', ''))]",
     "stName": "[format('{0}0st', replace(replace(parameters('namePrefix'), '-', ''), 'i', '1'))]",
-    "uaiName": "[format('id-{0}', parameters('namePrefix'))]"
+    "uaiName": "[format('id-{0}', parameters('namePrefix'))]",
+    "foundryName": "[format('fnd-{0}', parameters('namePrefix'))]"
   },
   "resources": [
     {
@@ -400,7 +397,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "6092628127234959657"
+              "templateHash": "6291647889993272311"
             }
           },
           "parameters": {
@@ -425,7 +422,7 @@
           "resources": [
             {
               "type": "Microsoft.DocumentDB/databaseAccounts",
-              "apiVersion": "2024-08-15",
+              "apiVersion": "2024-11-15",
               "name": "[parameters('accountName')]",
               "location": "[parameters('location')]",
               "kind": "GlobalDocumentDB",
@@ -449,7 +446,7 @@
             },
             {
               "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
-              "apiVersion": "2024-08-15",
+              "apiVersion": "2024-11-15",
               "name": "[format('{0}/{1}', parameters('accountName'), variables('sqlDatabaseName'))]",
               "properties": {
                 "resource": {
@@ -492,7 +489,7 @@
           "outputs": {
             "documentEndpoint": {
               "type": "string",
-              "value": "[reference(resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('accountName')), '2024-08-15').documentEndpoint]"
+              "value": "[reference(resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('accountName')), '2024-11-15').documentEndpoint]"
             },
             "accountId": {
               "type": "string",
@@ -655,6 +652,105 @@
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
+      "name": "foundry",
+      "resourceGroup": "[variables('rgName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "name": {
+            "value": "[variables('foundryName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.43.8.12551",
+              "templateHash": "14189412115163337230"
+            }
+          },
+          "parameters": {
+            "name": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "modelName": "gpt-4o-mini"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.CognitiveServices/accounts",
+              "apiVersion": "2024-10-01",
+              "name": "[parameters('name')]",
+              "location": "[parameters('location')]",
+              "kind": "AIServices",
+              "sku": {
+                "name": "S0"
+              },
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "customSubDomainName": "[parameters('name')]",
+                "publicNetworkAccess": "Enabled",
+                "disableLocalAuth": true,
+                "allowProjectManagement": false
+              }
+            },
+            {
+              "type": "Microsoft.CognitiveServices/accounts/deployments",
+              "apiVersion": "2024-10-01",
+              "name": "[format('{0}/{1}', parameters('name'), variables('modelName'))]",
+              "sku": {
+                "name": "GlobalStandard",
+                "capacity": 50
+              },
+              "properties": {
+                "model": {
+                  "format": "OpenAI",
+                  "name": "[variables('modelName')]",
+                  "version": "2024-07-18"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "modelEndpoint": {
+              "type": "string",
+              "value": "[format('https://{0}.services.ai.azure.com', parameters('name'))]"
+            },
+            "deploymentName": {
+              "type": "string",
+              "value": "[variables('modelName')]"
+            },
+            "accountId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('rgName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
       "name": "controlplane",
       "resourceGroup": "[variables('rgName')]",
       "properties": {
@@ -691,10 +787,10 @@
             "value": "[parameters('githubWebhookSecret')]"
           },
           "foundryEndpoint": {
-            "value": "[parameters('foundryEndpoint')]"
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry'), '2025-04-01').outputs.modelEndpoint.value]"
           },
-          "foundryApiKey": {
-            "value": "[parameters('foundryApiKey')]"
+          "foundryDeployment": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry'), '2025-04-01').outputs.deploymentName.value]"
           }
         },
         "template": {
@@ -704,7 +800,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "7991225335899716517"
+              "templateHash": "14576009436596919511"
             }
           },
           "parameters": {
@@ -738,13 +834,8 @@
             "foundryEndpoint": {
               "type": "string"
             },
-            "foundryApiKey": {
-              "type": "securestring",
-              "defaultValue": "PLACEHOLDER",
-              "allowedValues": [
-                "",
-                "PLACEHOLDER"
-              ]
+            "foundryDeployment": {
+              "type": "string"
             }
           },
           "resources": [
@@ -776,10 +867,6 @@
                     {
                       "name": "github-webhook-secret",
                       "value": "[parameters('githubWebhookSecret')]"
-                    },
-                    {
-                      "name": "foundry-api-key",
-                      "value": "[parameters('foundryApiKey')]"
                     }
                   ],
                   "ingress": {
@@ -815,8 +902,8 @@
                           "value": "[parameters('foundryEndpoint')]"
                         },
                         {
-                          "name": "HARNESS_FOUNDRY_API_KEY",
-                          "secretRef": "foundry-api-key"
+                          "name": "HARNESS_FOUNDRY_DEPLOYMENT",
+                          "value": "[parameters('foundryDeployment')]"
                         }
                       ]
                     }
@@ -841,6 +928,7 @@
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'acr')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'cae')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'cosmos')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry')]",
         "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('rgName'))]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'servicebus')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'uai')]"
@@ -1030,10 +1118,10 @@
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.blobEndpoint.value]"
           },
           "foundryEndpoint": {
-            "value": "[parameters('foundryEndpoint')]"
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry'), '2025-04-01').outputs.modelEndpoint.value]"
           },
-          "foundryApiKey": {
-            "value": "[parameters('foundryApiKey')]"
+          "foundryDeployment": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry'), '2025-04-01').outputs.deploymentName.value]"
           }
         },
         "template": {
@@ -1043,7 +1131,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "9922290739621057952"
+              "templateHash": "17664504699763084755"
             }
           },
           "parameters": {
@@ -1080,13 +1168,8 @@
             "foundryEndpoint": {
               "type": "string"
             },
-            "foundryApiKey": {
-              "type": "securestring",
-              "defaultValue": "PLACEHOLDER",
-              "allowedValues": [
-                "",
-                "PLACEHOLDER"
-              ]
+            "foundryDeployment": {
+              "type": "string"
             }
           },
           "resources": [
@@ -1115,10 +1198,6 @@
                     }
                   ],
                   "secrets": [
-                    {
-                      "name": "foundry-api-key",
-                      "value": "[parameters('foundryApiKey')]"
-                    },
                     {
                       "name": "sb-listen-conn",
                       "value": "[parameters('serviceBusListenerConnectionString')]"
@@ -1152,8 +1231,8 @@
                           "value": "[parameters('foundryEndpoint')]"
                         },
                         {
-                          "name": "HARNESS_FOUNDRY_API_KEY",
-                          "secretRef": "foundry-api-key"
+                          "name": "HARNESS_FOUNDRY_DEPLOYMENT",
+                          "value": "[parameters('foundryDeployment')]"
                         }
                       ]
                     }
@@ -1197,6 +1276,7 @@
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'acr')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'cae')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'cosmos')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry')]",
         "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('rgName'))]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'servicebus')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'storage')]",
@@ -1216,6 +1296,10 @@
     "mcpserverFqdn": {
       "type": "string",
       "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'mcpserver'), '2025-04-01').outputs.fqdn.value]"
+    },
+    "foundryAccountName": {
+      "type": "string",
+      "value": "[variables('foundryName')]"
     },
     "serviceBusNamespaceName": {
       "type": "string",

@@ -14,7 +14,6 @@ param location string = deployment().location
 @secure()
 param githubWebhookSecret string
 
-param foundryEndpoint string = ''
 
 @secure()
 @allowed(['', 'PLACEHOLDER'])
@@ -32,6 +31,7 @@ var sbName = 'sb-${namePrefix}'
 var cosmosName = 'cos-${replace(namePrefix, '-', '')}'
 var stName = '${replace(replace(namePrefix, '-', ''), 'i', '1')}0st'
 var uaiName = 'id-${namePrefix}'
+var foundryName = 'fnd-${namePrefix}'
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-07-01' = {
   name: rgName
@@ -102,6 +102,14 @@ module uai './modules/uai.bicep' = {
   }
 }
 
+module foundry './modules/foundry.bicep' = {
+  name: 'foundry'
+  scope: rg
+  params: {
+    name: foundryName
+    location: location
+  }
+}
 module controlplane './modules/app-controlplane.bicep' = {
   name: 'controlplane'
   scope: rg
@@ -115,8 +123,8 @@ module controlplane './modules/app-controlplane.bicep' = {
     serviceBusNamespaceName: sb.outputs.namespaceName
     cosmosEndpoint: cosmos.outputs.documentEndpoint
     githubWebhookSecret: githubWebhookSecret
-    foundryEndpoint: foundryEndpoint
-    foundryApiKey: foundryApiKey
+    foundryEndpoint: foundry.outputs.modelEndpoint
+    foundryDeployment: foundry.outputs.deploymentName
   }
 }
 
@@ -148,14 +156,15 @@ module worker './modules/app-worker.bicep' = {
     serviceBusListenerConnectionString: sb.outputs.listenerConnectionString
     cosmosEndpoint: cosmos.outputs.documentEndpoint
     blobEndpoint: storage.outputs.blobEndpoint
-    foundryEndpoint: foundryEndpoint
-    foundryApiKey: foundryApiKey
+    foundryEndpoint: foundry.outputs.modelEndpoint
+    foundryDeployment: foundry.outputs.deploymentName
   }
 }
 
 output resourceGroupName string = rg.name
 output controlplaneFqdn string = controlplane.outputs.fqdn
 output mcpserverFqdn string = mcpserver.outputs.fqdn
+output foundryAccountName string = foundryName
 output serviceBusNamespaceName string = sb.outputs.namespaceName
 output cosmosAccountName string = cosmosName
 output storageAccountName string = stName

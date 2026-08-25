@@ -46,11 +46,15 @@ def _client():  # type: ignore[no-untyped-def]
         key = _api_key()
         assert key is not None
         return ChatCompletionsClient(endpoint=endpoint, credential=AzureKeyCredential(key)), False
-    # Native credential chain: managed identity in Azure, developer creds locally.
+    # Native credential chain (managed identity in Azure, dev creds locally)
+    # with the Foundry audience forced — azure-ai-inference does not derive it.
     from azure.ai.inference.aio import ChatCompletionsClient
     from azure.identity.aio import DefaultAzureCredential
 
-    return ChatCompletionsClient(endpoint=endpoint, credential=DefaultAzureCredential()), True
+    from harness.credentials import ScopedAsyncCredential
+
+    credential = ScopedAsyncCredential(DefaultAzureCredential())
+    return ChatCompletionsClient(endpoint=endpoint, credential=credential), True
 
 
 _SYSTEM = (
