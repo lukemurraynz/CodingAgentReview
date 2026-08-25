@@ -27,7 +27,7 @@ resource db 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-11-15' = {
 var containers = ['findings', 'reviewRuns', 'changes', 'specifications', 'graphEntities', 'episodes']
 
 @batchSize(1)
-resource container 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-08-15' = [for c in containers: {
+resource container 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-11-15' = [for c in containers: {
   parent: db
   name: c
   properties: {
