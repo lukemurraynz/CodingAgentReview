@@ -3,7 +3,7 @@ param location string
 
 var sqlDatabaseName = 'harness'
 
-resource account 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
+resource account 'Microsoft.DocumentDB/databaseAccounts@2024-08-15' = {
   name: accountName
   location: location
   kind: 'GlobalDocumentDB'
