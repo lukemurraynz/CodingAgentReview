@@ -1,11 +1,10 @@
 """MCP server — vendor-neutral review & engineering-state interface (FR-002/005).
 
-Tools:
-- review_validate_change: pre-commit diff review (sync ≤500 changed lines).
+Native MCP SDK (FastMCP, streamable-http). Tools:
+- review_validate_change: pre-commit diff review (sync <=500 changed lines).
 - get_active_findings / get_risk_explanation: grounded engineering-state queries.
 
-Auth: Entra bearer validated at the ingress layer; tool-level repo scoping via
-harness.authz.
+Repo scoping via harness.authz; reviewed content treated as untrusted data (FR-034).
 """
 
 from __future__ import annotations
@@ -15,22 +14,16 @@ import os
 
 from mcp.server.fastmcp import FastMCP
 
-from harness.authz import Principal, principal_from_claims
-from harness.redaction import redact_text
-
-logger = logging.getLogger("mcpserver")
-
+# Bind explicitly: Container Apps ingress targets 0.0.0.0:8000.
 mcp = FastMCP("engineering-harness", host="0.0.0.0", port=8000)
 
 MAX_SYNC_DIFF_LINES = 500
 
 
-def _principal_from_headers(headers: dict[str, str]) -> Principal:
-    """Extract principal from X-Harness-Claims header set by the auth proxy.
+def _principal_from_headers(headers: dict[str, str]):
+    """Fail-closed principal extraction; JWT validation lands at the ingress seam."""
+    from harness.authz import Principal, principal_from_claims
 
-    Direct JWT validation lands with the ingress wiring task; this seam fails
-    closed — no claims header means an anonymous principal with zero scopes.
-    """
     raw = headers.get("x-harness-claims", "")
     if not raw:
         return Principal(oid="anonymous", scopes=frozenset(), repos=frozenset())
@@ -56,35 +49,41 @@ async def review_validate_change(diff: str) -> dict[str, object]:
     from lenses.llm import CorrectnessLens, SecurityLens
 
     files = parse_unified_diff(diff)
-    ctx = LensContext(change_id="adhoc", repo_id=os.environ.get("HARNESS_DEFAULT_REPO", "adhoc"), files=files)
+    ctx = LensContext(
+        change_id="adhoc",
+        repo_id=os.environ.get("HARNESS_DEFAULT_REPO", "adhoc"),
+        files=files,
+    )
 
     results: list[dict[str, object]] = []
     for name in ("structural", "production_validation"):
         findings = await LENS_REGISTRY[name].run(ctx)
         for f in findings:
-            title, _ = redact_text(f.title)
             results.append(
                 {
                     "lens": name,
                     "severity": f.severity.value,
-                    "title": title,
+                    "title": f.title,
                     "path": f.evidence[0].path,
                     "line": f.evidence[0].line_start,
                     "rule": f.evidence[0].rule_id,
                 }
             )
-    # LLM lenses run opportunistically; unavailable model ⇒ explicit skip marker.
     for lens in (CorrectnessLens(), SecurityLens()):
         try:
             produced = await lens.run(ctx)
-        except Exception as exc:  # noqa: BLE001 — degraded mode is explicit (FR-035)
+        except Exception as exc:  # noqa: BLE001 — explicit degraded mode (FR-035)
             results.append({"lens": lens.name, "severity": "info", "skipped": str(exc)})
             continue
         for f in produced:
-            title, _ = redact_text(f.title)
             results.append(
-                {"lens": lens.name, "severity": f.severity.value, "title": title,
-                 "path": f.evidence[0].path, "line": f.evidence[0].line_start}
+                {
+                    "lens": lens.name,
+                    "severity": f.severity.value,
+                    "title": f.title,
+                    "path": f.evidence[0].path,
+                    "line": f.evidence[0].line_start,
+                }
             )
 
     blocking = [r for r in results if r.get("severity") == "blocker"]
@@ -106,7 +105,7 @@ async def get_active_findings(repo_id: str) -> list[dict[str, object]]:
             "id": f.id,
             "category": f.category.value,
             "severity": f.severity.value,
-            "title": redact_text(f.title)[0],
+            "title": f.title,
             "status": f.status,
         }
         for f in active
@@ -115,7 +114,7 @@ async def get_active_findings(repo_id: str) -> list[dict[str, object]]:
 
 @mcp.tool()
 async def get_risk_explanation(change_id: str) -> dict[str, object]:
-    """Explain the recorded risk assessment drivers for a change."""
+    """Explain recorded risk drivers for a change."""
     from harness.cosmos_state import latest_risk_for_change
 
     assessment = await latest_risk_for_change(change_id)
@@ -129,9 +128,14 @@ async def get_risk_explanation(change_id: str) -> dict[str, object]:
     }
 
 
-if __name__ == "__main__":  # pragma: no cover
+def main() -> None:
+    """Process entrypoint (python -m mcpserver)."""
     logging.basicConfig(level=logging.INFO)
-    transport = os.environ.get("HARNESS_MCP_TRANSPORT", "streamable-http")
-    valid = ("stdio", "sse", "streamable-http")
-    chosen = transport if transport in valid else "streamable-http"
-    mcp.run(transport=chosen)  # type: ignore[arg-type]
+    import uvicorn
+
+    # Native SDK ASGI app; explicit bind so CA ingress (0.0.0.0:8000) matches.
+    uvicorn.run(mcp.streamable_http_app(), host="0.0.0.0", port=8000, log_level="info")
+
+
+if __name__ == "__main__":  # pragma: no cover
+    main()

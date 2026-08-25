@@ -41,6 +41,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'controlplane'
           image: image
           resources: { cpu: json('0.5'), memory: '1Gi' }
+
           env: [
             { name: 'HARNESS_SERVICEBUS_NS', value: serviceBusNamespaceName }
             { name: 'HARNESS_COSMOS_ENDPOINT', value: cosmosEndpoint }
@@ -50,7 +51,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           ]
         }
       ]
-      scale: { minReplicas: 0, maxReplicas: 5 }
+      scale: { minReplicas: 1, maxReplicas: 5 }
     }
   }
 }

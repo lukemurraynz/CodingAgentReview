@@ -30,13 +30,14 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'mcpserver'
           image: image
           resources: { cpu: json('0.5'), memory: '1Gi' }
+
           env: [
             { name: 'HARNESS_COSMOS_ENDPOINT', value: cosmosEndpoint }
             { name: 'HARNESS_MCP_TRANSPORT', value: 'streamable-http' }
           ]
         }
       ]
-      scale: { minReplicas: 0, maxReplicas: 5 }
+      scale: { minReplicas: 1, maxReplicas: 5 }
     }
   }
 }

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.43.8.12551",
-      "templateHash": "6269091927259622661"
+      "templateHash": "4573486105208222282"
     }
   },
   "parameters": {
@@ -58,7 +58,7 @@
   "resources": [
     {
       "type": "Microsoft.Resources/resourceGroups",
-      "apiVersion": "2024-03-01",
+      "apiVersion": "2024-07-01",
       "name": "[variables('rgName')]",
       "location": "[parameters('location')]"
     },
@@ -400,7 +400,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "2686095169145112456"
+              "templateHash": "6092628127234959657"
             }
           },
           "parameters": {
@@ -425,7 +425,7 @@
           "resources": [
             {
               "type": "Microsoft.DocumentDB/databaseAccounts",
-              "apiVersion": "2024-05-15",
+              "apiVersion": "2024-08-15",
               "name": "[parameters('accountName')]",
               "location": "[parameters('location')]",
               "kind": "GlobalDocumentDB",
@@ -449,7 +449,7 @@
             },
             {
               "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
-              "apiVersion": "2024-05-15",
+              "apiVersion": "2024-08-15",
               "name": "[format('{0}/{1}', parameters('accountName'), variables('sqlDatabaseName'))]",
               "properties": {
                 "resource": {
@@ -469,7 +469,7 @@
                 "batchSize": 1
               },
               "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
-              "apiVersion": "2024-05-15",
+              "apiVersion": "2024-08-15",
               "name": "[format('{0}/{1}/{2}', parameters('accountName'), variables('sqlDatabaseName'), variables('containers')[copyIndex()])]",
               "properties": {
                 "resource": {
@@ -492,7 +492,7 @@
           "outputs": {
             "documentEndpoint": {
               "type": "string",
-              "value": "[reference(resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('accountName')), '2024-05-15').documentEndpoint]"
+              "value": "[reference(resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('accountName')), '2024-08-15').documentEndpoint]"
             },
             "accountId": {
               "type": "string",
@@ -704,7 +704,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "496714549908026719"
+              "templateHash": "7991225335899716517"
             }
           },
           "parameters": {
@@ -822,7 +822,7 @@
                     }
                   ],
                   "scale": {
-                    "minReplicas": 0,
+                    "minReplicas": 1,
                     "maxReplicas": 5
                   }
                 }
@@ -886,7 +886,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "2843970501775016528"
+              "templateHash": "3179263917547435911"
             }
           },
           "parameters": {
@@ -965,7 +965,7 @@
                     }
                   ],
                   "scale": {
-                    "minReplicas": 0,
+                    "minReplicas": 1,
                     "maxReplicas": 5
                   }
                 }
