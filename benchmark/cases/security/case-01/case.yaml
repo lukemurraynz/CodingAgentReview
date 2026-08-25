@@ -1,0 +1,6 @@
+id: "case-01"
+category: security
+severity: blocker
+description: "SQL built via f-string interpolation"
+expected_finding_regex: "(?i)sql.?injection|f\\\"SELECT|format.*SELECT"
+expected_behavior: detect

@@ -1,0 +1,6 @@
+id: "case-02"
+category: production_validation
+severity: high
+description: "Retry loop reports success after final failure"
+expected_finding_regex: "(?i)retry.*success|swallow|final failure"
+expected_behavior: detect

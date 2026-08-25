@@ -1,0 +1,6 @@
+id: "case-03"
+category: production_validation
+severity: medium
+description: "Feature-flag fallback branch has no telemetry"
+expected_finding_regex: "(?i)telemetry|observable|fallback.*metric"
+expected_behavior: detect

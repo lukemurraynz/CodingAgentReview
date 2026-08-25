@@ -1,0 +1,6 @@
+id: "case-05"
+category: security
+severity: blocker
+description: "Path traversal via unvalidated join"
+expected_finding_regex: "(?i)path.?traversal|\\.\\.|join.*filename"
+expected_behavior: detect

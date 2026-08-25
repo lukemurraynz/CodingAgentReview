@@ -1,0 +1,123 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.43.8.12551",
+      "templateHash": "1243080816411366382"
+    }
+  },
+  "parameters": {
+    "name": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "environmentId": {
+      "type": "string"
+    },
+    "image": {
+      "type": "string"
+    },
+    "serviceBusNamespaceName": {
+      "type": "string"
+    },
+    "cosmosEndpoint": {
+      "type": "string"
+    },
+    "blobEndpoint": {
+      "type": "string"
+    },
+    "foundryEndpoint": {
+      "type": "string"
+    },
+    "foundryApiKey": {
+      "type": "securestring",
+      "defaultValue": "PLACEHOLDER",
+      "allowedValues": [
+        "",
+        "PLACEHOLDER"
+      ]
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.App/jobs",
+      "apiVersion": "2024-03-01",
+      "name": "[parameters('name')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "environmentId": "[parameters('environmentId')]",
+        "configuration": {
+          "triggerType": "Schedule",
+          "scheduleTriggerConfig": {
+            "cronExpression": "*/1 * * * *",
+            "replicaCompletionCount": 1,
+            "parallelism": 1,
+            "replicaRetryLimit": 2,
+            "replicaTimeout": 1800
+          },
+          "secrets": [
+            {
+              "name": "foundry-api-key",
+              "value": "[parameters('foundryApiKey')]"
+            }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "worker",
+              "image": "[parameters('image')]",
+              "resources": {
+                "cpu": "[json('1')]",
+                "memory": "2Gi"
+              },
+              "env": [
+                {
+                  "name": "HARNESS_JOB_MODE",
+                  "value": "drain"
+                },
+                {
+                  "name": "HARNESS_DRAIN_SECONDS",
+                  "value": "50"
+                },
+                {
+                  "name": "HARNESS_SERVICEBUS_NS",
+                  "value": "[parameters('serviceBusNamespaceName')]"
+                },
+                {
+                  "name": "HARNESS_COSMOS_ENDPOINT",
+                  "value": "[parameters('cosmosEndpoint')]"
+                },
+                {
+                  "name": "HARNESS_BLOB_ENDPOINT",
+                  "value": "[parameters('blobEndpoint')]"
+                },
+                {
+                  "name": "HARNESS_FOUNDRY_ENDPOINT",
+                  "value": "[parameters('foundryEndpoint')]"
+                },
+                {
+                  "name": "HARNESS_FOUNDRY_API_KEY",
+                  "secretRef": "foundry-api-key"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "principalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.App/jobs', parameters('name')), '2024-03-01', 'full').identity.principalId]"
+    }
+  }
+}

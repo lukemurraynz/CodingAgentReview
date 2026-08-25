@@ -1,0 +1,6 @@
+id: "case-02"
+category: security
+severity: blocker
+description: "shell=True with user-controlled input"
+expected_finding_regex: "(?i)shell.?true|command.?injection|subprocess"
+expected_behavior: detect

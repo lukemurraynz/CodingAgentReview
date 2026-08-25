@@ -1,0 +1,6 @@
+id: "case-03"
+category: security
+severity: high
+description: "yaml.load without safe Loader"
+expected_finding_regex: "(?i)unsafe.?deserializ|yaml\\.load|SafeLoader"
+expected_behavior: detect

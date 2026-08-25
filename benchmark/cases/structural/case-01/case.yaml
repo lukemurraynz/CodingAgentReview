@@ -1,0 +1,6 @@
+id: "case-01"
+category: structural
+severity: blocker
+description: "No-op subscriber wired into router"
+expected_finding_regex: "(?i)noop|no-op"
+expected_behavior: detect

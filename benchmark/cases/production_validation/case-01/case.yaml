@@ -1,0 +1,6 @@
+id: "case-01"
+category: production_validation
+severity: high
+description: "Service registered but never invoked"
+expected_finding_regex: "(?i)registered.*not.*invoked|never called|defined.*not.*wired"
+expected_behavior: detect

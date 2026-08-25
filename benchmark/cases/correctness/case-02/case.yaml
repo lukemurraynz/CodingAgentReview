@@ -1,0 +1,6 @@
+id: "case-02"
+category: correctness
+severity: high
+description: "Mutable default arg accumulates state"
+expected_finding_regex: "default argument|mutable default|\\.append"
+expected_behavior: detect

@@ -1,0 +1,64 @@
+{
+  "$defs": {
+    "EventType": {
+      "enum": [
+        "PullRequestChanged",
+        "CommitCreated",
+        "BuildCompleted",
+        "TestCompleted",
+        "DeploymentCompleted",
+        "FindingCreated",
+        "FindingResolved",
+        "RuntimeSignalObserved",
+        "IncidentOpened",
+        "SpecificationChanged"
+      ],
+      "title": "EventType",
+      "type": "string"
+    }
+  },
+  "description": "Canonical engineering event envelope v1",
+  "properties": {
+    "id": {
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+    },
+    "event_type": {
+      "$ref": "#/$defs/EventType"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "source": {
+      "minLength": 1,
+      "title": "Source",
+      "type": "string"
+    },
+    "subject": {
+      "minLength": 1,
+      "title": "Subject",
+      "type": "string"
+    },
+    "occurred_at": {
+      "format": "date-time",
+      "title": "Occurred At",
+      "type": "string"
+    },
+    "data": {
+      "additionalProperties": true,
+      "title": "Data",
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "event_type",
+    "source",
+    "subject"
+  ],
+  "title": "CanonicalEvent",
+  "type": "object"
+}

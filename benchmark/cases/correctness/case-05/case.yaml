@@ -1,0 +1,6 @@
+id: "case-05"
+category: correctness
+severity: medium
+description: "Wrong dict fallback key returns wrong record"
+expected_finding_regex: "\\.get\\(|fallback|wrong key"
+expected_behavior: detect

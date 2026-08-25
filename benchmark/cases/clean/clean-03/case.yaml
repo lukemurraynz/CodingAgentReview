@@ -1,0 +1,6 @@
+id: "clean-03"
+category: clean
+severity: info
+description: "Clean retry with honest failure"
+expected_finding_regex: ""
+expected_behavior: detect

@@ -1,0 +1,6 @@
+id: "clean-02"
+category: clean
+severity: info
+description: "Clean validated parser"
+expected_finding_regex: ""
+expected_behavior: detect

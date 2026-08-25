@@ -1,0 +1,6 @@
+id: "case-04"
+category: correctness
+severity: high
+description: "Swallowed KeyError changes result silently"
+expected_finding_regex: "KeyError|except.*pass|swallow"
+expected_behavior: detect

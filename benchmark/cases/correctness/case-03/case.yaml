@@ -1,0 +1,6 @@
+id: "case-03"
+category: correctness
+severity: medium
+description: "Assignment vs comparison in condition"
+expected_finding_regex: "(?i)assignment|compare|=="
+expected_behavior: detect

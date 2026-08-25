@@ -1,0 +1,6 @@
+id: "case-02"
+category: structural
+severity: high
+description: "Silent fallback loses partial data"
+expected_finding_regex: "(?i)silent.?fail|except Exception|warning"
+expected_behavior: detect

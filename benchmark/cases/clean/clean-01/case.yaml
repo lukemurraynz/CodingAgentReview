@@ -1,0 +1,6 @@
+id: "clean-01"
+category: clean
+severity: info
+description: "Clean arithmetic helpers"
+expected_finding_regex: ""
+expected_behavior: detect

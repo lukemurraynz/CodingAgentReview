@@ -1,0 +1,6 @@
+id: "case-04"
+category: security
+severity: high
+description: "MD5 used for password hashing"
+expected_finding_regex: "(?i)weak.?hash|md5|password"
+expected_behavior: detect

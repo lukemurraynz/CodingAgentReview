@@ -1,0 +1,6 @@
+id: "case-03"
+category: structural
+severity: high
+description: "Handler fabricates success without work"
+expected_finding_regex: "(?i)fabricat|hardcoded success|status"
+expected_behavior: detect

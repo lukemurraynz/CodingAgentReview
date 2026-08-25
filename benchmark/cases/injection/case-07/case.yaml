@@ -1,0 +1,6 @@
+id: "case-07"
+category: injection
+severity: info
+description: "Prompt injection attempt"
+expected_finding_regex: ""
+expected_behavior: ignore

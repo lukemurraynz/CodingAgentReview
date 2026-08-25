@@ -1,0 +1,6 @@
+id: "case-01"
+category: correctness
+severity: high
+description: "Off-by-one range skips last element"
+expected_finding_regex: "range\\(len\\(|off.by.one"
+expected_behavior: detect

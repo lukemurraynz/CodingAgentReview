@@ -1,0 +1,62 @@
+# azd project configuration — Agentic Engineering Harness
+# Requires: azd 1.31+, Azure CLI auth. No local Docker needed (ACR remote build).
+name: agentic-engineering-harness
+metadata:
+  template: harness@0.1.0
+
+infra:
+  provider: bicep
+  path: infra
+  module: main
+
+hooks:
+  postprovision:
+    windows:
+      shell: pwsh
+      run: infra/scripts/grant-access.ps1
+      interactive: false
+      continueOnError: false
+    posix:
+      shell: sh
+      run: echo 'grant-access.ps1 requires PowerShell (windows pipeline)'
+  postdeploy:
+    windows:
+      shell: pwsh
+      run: infra/scripts/grant-access.ps1
+      interactive: false
+      continueOnError: false
+    posix:
+      shell: sh
+      run: echo 'grant-access.ps1 requires PowerShell (windows pipeline)'
+
+pipeline:
+  provider: github
+
+services:
+  controlplane:
+    project: ./src
+    host: containerapp
+    language: python
+    resourceName: ca-harness-dev-lm-controlplane
+    docker:
+      path: ../docker/controlplane.Dockerfile
+      context: ../
+      remoteBuild: true
+  mcpserver:
+    project: ./src
+    host: containerapp
+    language: python
+    resourceName: ca-harness-dev-lm-mcpserver
+    docker:
+      path: ../docker/mcpserver.Dockerfile
+      context: ../
+      remoteBuild: true
+  worker:
+    project: ./src
+    host: containerapp
+    language: python
+    resourceName: ca-harness-dev-lm-worker
+    docker:
+      path: ../docker/worker.Dockerfile
+      context: ../
+      remoteBuild: true

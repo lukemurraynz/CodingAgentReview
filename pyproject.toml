@@ -1,0 +1,65 @@
+[project]
+name = "agentic-engineering-harness"
+version = "0.1.0"
+description = "Centrally hosted agentic code review and engineering assurance platform"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.9",
+    "pyyaml>=6.0.3",
+]
+
+[project.optional-dependencies]
+azure = [
+    "azure-servicebus>=7.12",
+    "azure-cosmos>=4.7",
+    "azure-storage-blob>=12.20",
+    "azure-identity>=1.19",
+    "azure-monitor-opentelemetry>=1.6",
+    "openai>=1.40",
+]
+api = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.27",
+]
+mcp = [
+    "mcp>=1.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "src/harness",
+    "src/providers",
+    "src/worker",
+    "src/lenses",
+    "src/controlplane",
+    "src/mcpserver",
+    "src/eval",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q"
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["src", "tests"]
+extend-exclude = ["benchmark"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/gen_benchmark.py" = ["E501"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

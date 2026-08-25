@@ -1,0 +1,6 @@
+id: "case-04"
+category: production_validation
+severity: high
+description: "Component writes metric no dashboard reads"
+expected_finding_regex: "(?i)metric|observable|unused signal"
+expected_behavior: detect
