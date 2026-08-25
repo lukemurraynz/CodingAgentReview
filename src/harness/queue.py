@@ -52,9 +52,9 @@ class ReviewQueueConsumer:
         fqns = _fully_qualified()
         if not conn and not fqns:
             raise RuntimeError("Service Bus receive config missing (conn string or namespace)")
+        from azure.identity.aio import DefaultAzureCredential
         from azure.servicebus import ServiceBusMessage  # noqa: F401
         from azure.servicebus.aio import AutoLockRenewer, ServiceBusClient
-        from azure.identity.aio import DefaultAzureCredential
 
         if conn:
             client = ServiceBusClient.from_connection_string(conn)

@@ -20,7 +20,7 @@ from harness.redaction import redact_text
 
 logger = logging.getLogger("mcpserver")
 
-mcp = FastMCP("engineering-harness")
+mcp = FastMCP("engineering-harness", host="0.0.0.0", port=8000)
 
 MAX_SYNC_DIFF_LINES = 500
 

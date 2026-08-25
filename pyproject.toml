@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Centrally hosted agentic code review and engineering assurance platform"
 requires-python = ">=3.12"
 dependencies = [
+    "azure-ai-inference>=1.0.0b9",
     "pydantic>=2.9",
     "pyyaml>=6.0.3",
 ]
@@ -15,7 +16,6 @@ azure = [
     "azure-storage-blob>=12.20",
     "azure-identity>=1.19",
     "azure-monitor-opentelemetry>=1.6",
-    "openai>=1.40",
 ]
 api = [
     "fastapi>=0.115",
