@@ -11,6 +11,6 @@ COPY pyproject.toml uv.lock ./
 COPY src/ ./src/
 
 # Deterministic deps: export from committed lockfile, install app without deps.
-RUN uv export --frozen --no-hashes --no-emit-project --extra azure --extra mcp -o /tmp/requirements.txt \
+RUN uv export --frozen --no-hashes --no-emit-project --extra azure --extra api --extra mcp -o /tmp/requirements.txt \
     && uv pip install --system --no-cache -r /tmp/requirements.txt \
     && uv pip install --system --no-cache --no-deps .

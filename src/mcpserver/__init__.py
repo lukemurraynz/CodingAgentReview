@@ -128,12 +128,27 @@ async def get_risk_explanation(change_id: str) -> dict[str, object]:
     }
 
 
+def create_mcp_app():
+    """ASGI factory: FastAPI shell + native FastMCP streamable-http mounted at /mcp."""
+    from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
+
+    api = FastAPI(title="engineering-harness-mcp")
+
+    @api.get("/healthz")
+    async def healthz():
+        return {"status": "ok"}
+
+    api.mount("/mcp", mcp.streamable_http_app())
+    return api
+
 def main() -> None:
-    """Process entrypoint (python -m mcpserver)."""
+    import uvicorn as _uv
+
+    """Process entrypoint (python -m mcpserver) — stdio/local use only."""
     logging.basicConfig(level=logging.INFO)
     import uvicorn
 
-    # Native SDK ASGI app; explicit bind so CA ingress (0.0.0.0:8000) matches.
     uvicorn.run(mcp.streamable_http_app(), host="0.0.0.0", port=8000, log_level="info")
 
 

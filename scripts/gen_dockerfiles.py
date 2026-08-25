@@ -21,7 +21,7 @@ RUN {extra_flags} -o /tmp/requirements.txt \\
 
 SERVICES = {
     "controlplane": ("azure api mcp", 'EXPOSE 8000\nCMD ["uvicorn", "controlplane:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]\n'),
-    "mcpserver": ("azure mcp", 'EXPOSE 8000\nCMD ["python", "-m", "mcpserver"]\n'),
+    "mcpserver": ("azure api mcp", 'EXPOSE 8000\nCMD ["uvicorn", "mcpserver:create_mcp_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]\n'),
     "worker": ("azure", 'CMD ["python", "-m", "worker.runner"]\n'),
 }
 

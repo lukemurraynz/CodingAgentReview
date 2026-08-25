@@ -16,3 +16,8 @@ build/
 # Tooling
 .playwright-mcp/
 uv.lock.bak
+
+# azd local env state (contains webhook secrets)
+.azure/
+.sisyphus/
+
