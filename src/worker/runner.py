@@ -170,8 +170,12 @@ async def execute_review(event_data: dict[str, object]) -> ReviewRun:
     if not os.environ.get("HARNESS_DRY_RUN"):
         try:
             await adapter.post_annotations(change, findings)
-        except Exception as exc:  # noqa: BLE001 — annotation is a projection (FR-018)
+        except Exception as exc:  # noqa: BLE001 - projection failure stays visible (F1)
             logger.error("annotation posting failed: %s", exc)
+            run.degraded_reasons.append(f"annotation_failed:{change.provider.value}")
+            run.coverage = "partial_explicit"
+            if run.status == RunStatus.COMPLETED:
+                run.status = RunStatus.DEGRADED
 
     return run
 
