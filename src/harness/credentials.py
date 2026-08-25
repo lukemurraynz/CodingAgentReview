@@ -23,8 +23,8 @@ class ScopedAsyncCredential:
     async def close(self) -> None:
         await self._inner.close()
 
-    async def __aenter__(self) -> "ScopedAsyncCredential":
+    async def __aenter__(self) -> ScopedAsyncCredential:
         return self
 
-    async def __aexit__(self, *exc: Any) -> None:
+    async def __aexit__(self, exc_type: Any = None, exc_value: Any = None, traceback: Any = None) -> None:
         await self.close()

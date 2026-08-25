@@ -222,6 +222,9 @@ async def persist(run: ReviewRun, findings: list[Finding]) -> None:
         await repo.put_finding(f)
 
 
+from harness.telemetry import configure_telemetry
+
+
 async def main_loop() -> None:  # pragma: no cover - process entrypoint
     """Entry mode selection:
     - HARNESS_JOB_MODE=drain → consume for DRAIN_SECONDS then exit cleanly
@@ -248,6 +251,7 @@ async def main_loop() -> None:  # pragma: no cover - process entrypoint
             logger.info("drain window elapsed; exiting cleanly")
         return
 
+    configure_telemetry()
     logger.info("worker consuming queue %s", QUEUE_NAME)
     await consumer.receive(handler)
 

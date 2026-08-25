@@ -143,6 +143,9 @@ def create_mcp_app():
     return api
 
 def main() -> None:
+    from harness.telemetry import configure_telemetry
+
+    configure_telemetry()
     import uvicorn as _uv
 
     """Process entrypoint (python -m mcpserver) — stdio/local use only."""

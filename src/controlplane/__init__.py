@@ -27,7 +27,12 @@ def _event_type_for(change_type: ChangeType) -> EventType:
     return EventType.PULL_REQUEST_CHANGED if change_type == ChangeType.PULL_REQUEST else EventType.COMMIT_CREATED
 
 
+
+from harness.telemetry import configure_telemetry
+
+
 def create_app() -> FastAPI:
+    configure_telemetry()
     app = FastAPI(title="Agentic Engineering Harness — Control Plane", version="0.1.0")
 
     @app.exception_handler(PermissionError)
