@@ -45,7 +45,7 @@ output accountId string = account.id
 
 // Foundry project — hosts the Agent-Framework harness surface
 // (FOUNDRY_PROJECT_ENDPOINT for agent-framework-foundry).
-resource harnessProject 'Microsoft.CognitiveServices/accounts/projects@2025-04-01-preview' = {
+resource harnessProject 'Microsoft.CognitiveServices/accounts/projects@2025-09-01' = {
   parent: account
   name: 'harness'
   properties: {
