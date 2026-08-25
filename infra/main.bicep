@@ -125,6 +125,7 @@ module controlplane './modules/app-controlplane.bicep' = {
     githubWebhookSecret: githubWebhookSecret
     foundryEndpoint: foundry.outputs.modelEndpoint
     foundryDeployment: foundry.outputs.deploymentName
+    foundryProjectEndpoint: foundry.outputs.projectEndpoint
     foundryApiKey: foundry.outputs.apiKey
   }
 }
@@ -142,6 +143,7 @@ module mcpserver './modules/app-mcpserver.bicep' = {
     cosmosEndpoint: cosmos.outputs.documentEndpoint
     foundryEndpoint: foundry.outputs.modelEndpoint
     foundryDeployment: foundry.outputs.deploymentName
+    foundryProjectEndpoint: foundry.outputs.projectEndpoint
     foundryApiKey: foundry.outputs.apiKey
   }
 }
@@ -162,6 +164,7 @@ module worker './modules/app-worker.bicep' = {
     blobEndpoint: storage.outputs.blobEndpoint
     foundryEndpoint: foundry.outputs.modelEndpoint
     foundryDeployment: foundry.outputs.deploymentName
+    foundryProjectEndpoint: foundry.outputs.projectEndpoint
     foundryApiKey: foundry.outputs.apiKey
   }
 }

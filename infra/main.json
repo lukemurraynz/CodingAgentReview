@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.43.8.12551",
-      "templateHash": "10687604652991088389"
+      "templateHash": "7561240824450894111"
     }
   },
   "parameters": {
@@ -55,7 +55,7 @@
   "resources": [
     {
       "type": "Microsoft.Resources/resourceGroups",
-      "apiVersion": "2024-07-01",
+      "apiVersion": "2024-11-01",
       "name": "[variables('rgName')]",
       "location": "[parameters('location')]"
     },
@@ -397,7 +397,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "6291647889993272311"
+              "templateHash": "15406730329710970962"
             }
           },
           "parameters": {
@@ -466,7 +466,7 @@
                 "batchSize": 1
               },
               "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
-              "apiVersion": "2024-08-15",
+              "apiVersion": "2024-11-15",
               "name": "[format('{0}/{1}/{2}', parameters('accountName'), variables('sqlDatabaseName'), variables('containers')[copyIndex()])]",
               "properties": {
                 "resource": {
@@ -674,7 +674,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "14469762960950165177"
+              "templateHash": "16458840687245147929"
             }
           },
           "parameters": {
@@ -703,8 +703,7 @@
               },
               "properties": {
                 "customSubDomainName": "[parameters('name')]",
-                "publicNetworkAccess": "Enabled",
-                "disableLocalAuth": true
+                "publicNetworkAccess": "Enabled"
               }
             },
             {
@@ -724,6 +723,17 @@
               "dependsOn": [
                 "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
               ]
+            },
+            {
+              "type": "Microsoft.CognitiveServices/accounts/projects",
+              "apiVersion": "2025-04-01-preview",
+              "name": "[format('{0}/{1}', parameters('name'), 'harness')]",
+              "properties": {
+                "displayName": "Agentic Engineering Harness"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
+              ]
             }
           ],
           "outputs": {
@@ -738,6 +748,10 @@
             "accountId": {
               "type": "string",
               "value": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
+            },
+            "projectEndpoint": {
+              "type": "string",
+              "value": "[format('https://{0}.services.ai.azure.com/api/projects/harness', parameters('name'))]"
             },
             "apiKey": {
               "type": "string",
@@ -794,6 +808,9 @@
           "foundryDeployment": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry'), '2025-04-01').outputs.deploymentName.value]"
           },
+          "foundryProjectEndpoint": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry'), '2025-04-01').outputs.projectEndpoint.value]"
+          },
           "foundryApiKey": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry'), '2025-04-01').outputs.apiKey.value]"
           }
@@ -805,7 +822,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "15539797367025097412"
+              "templateHash": "15541622371387174247"
             }
           },
           "parameters": {
@@ -840,6 +857,9 @@
               "type": "string"
             },
             "foundryDeployment": {
+              "type": "string"
+            },
+            "foundryProjectEndpoint": {
               "type": "string"
             },
             "foundryApiKey": {
@@ -913,6 +933,10 @@
                         {
                           "name": "HARNESS_FOUNDRY_ENDPOINT",
                           "value": "[parameters('foundryEndpoint')]"
+                        },
+                        {
+                          "name": "FOUNDRY_PROJECT_ENDPOINT",
+                          "value": "[parameters('foundryProjectEndpoint')]"
                         },
                         {
                           "name": "HARNESS_FOUNDRY_API_KEY",
@@ -989,6 +1013,9 @@
           "foundryDeployment": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry'), '2025-04-01').outputs.deploymentName.value]"
           },
+          "foundryProjectEndpoint": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry'), '2025-04-01').outputs.projectEndpoint.value]"
+          },
           "foundryApiKey": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry'), '2025-04-01').outputs.apiKey.value]"
           }
@@ -1000,7 +1027,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "12110440504131320033"
+              "templateHash": "12141484851050165230"
             }
           },
           "parameters": {
@@ -1029,6 +1056,9 @@
               "type": "string"
             },
             "foundryDeployment": {
+              "type": "string"
+            },
+            "foundryProjectEndpoint": {
               "type": "string"
             },
             "foundryApiKey": {
@@ -1094,6 +1124,10 @@
                         {
                           "name": "HARNESS_FOUNDRY_ENDPOINT",
                           "value": "[parameters('foundryEndpoint')]"
+                        },
+                        {
+                          "name": "FOUNDRY_PROJECT_ENDPOINT",
+                          "value": "[parameters('foundryProjectEndpoint')]"
                         },
                         {
                           "name": "HARNESS_FOUNDRY_API_KEY",
@@ -1178,6 +1212,9 @@
           "foundryDeployment": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry'), '2025-04-01').outputs.deploymentName.value]"
           },
+          "foundryProjectEndpoint": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry'), '2025-04-01').outputs.projectEndpoint.value]"
+          },
           "foundryApiKey": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry'), '2025-04-01').outputs.apiKey.value]"
           }
@@ -1189,7 +1226,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "10200618292617276327"
+              "templateHash": "16404156150571576181"
             }
           },
           "parameters": {
@@ -1227,6 +1264,9 @@
               "type": "string"
             },
             "foundryDeployment": {
+              "type": "string"
+            },
+            "foundryProjectEndpoint": {
               "type": "string"
             },
             "foundryApiKey": {
@@ -1295,6 +1335,10 @@
                         {
                           "name": "HARNESS_FOUNDRY_ENDPOINT",
                           "value": "[parameters('foundryEndpoint')]"
+                        },
+                        {
+                          "name": "FOUNDRY_PROJECT_ENDPOINT",
+                          "value": "[parameters('foundryProjectEndpoint')]"
                         },
                         {
                           "name": "HARNESS_FOUNDRY_API_KEY",

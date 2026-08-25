@@ -43,4 +43,16 @@ output modelEndpoint string = 'https://${name}.services.ai.azure.com'
 output deploymentName string = modelName
 output accountId string = account.id
 
+// Foundry project — hosts the Agent-Framework harness surface
+// (FOUNDRY_PROJECT_ENDPOINT for agent-framework-foundry).
+resource harnessProject 'Microsoft.CognitiveServices/accounts/projects@2025-04-01-preview' = {
+  parent: account
+  name: 'harness'
+  properties: {
+    displayName: 'Agentic Engineering Harness'
+  }
+}
+
+output projectEndpoint string = 'https://${name}.services.ai.azure.com/api/projects/harness'
+
 output apiKey string = listKeys(account.id, '2024-10-01').key1

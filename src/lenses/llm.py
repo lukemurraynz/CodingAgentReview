@@ -1,16 +1,18 @@
-"""LLM-backed review lenses (correctness, security) via Microsoft Foundry.
+"""LLM-backed review lenses (correctness, security) on the native MAF harness.
 
-Uses the NATIVE Azure AI Inference SDK (azure-ai-inference) against the
-Foundry model endpoint — Entra identity by default (DefaultAzureCredential,
-matching the platform's managed-identity posture); API-key fallback for local
-development only.
+Microsoft Agent Framework (agent-framework-foundry): each lens is an `Agent`
+over `FoundryChatClient`, pointed at this deployment's Foundry project and the
+model-router deployment. Entra via DefaultAzureCredential (aio). Multi-turn
+sessions, tools, and middleware are available from the same Agent surface when
+Phase-2 harness operations land.
 
-Without endpoint configuration the lenses raise LensUnavailable — callers
+Without FOUNDRY_PROJECT_ENDPOINT the lens raises LensUnavailable — callers
 record an explicit skip, never fabricating results (FR-035).
 """
 
 from __future__ import annotations
 
+import json
 import os
 
 from harness.models import Evidence, Finding, FindingCategory, Severity
@@ -22,39 +24,34 @@ class LensUnavailable(RuntimeError):
     """Model access not configured — caller must record explicit skip."""
 
 
-def _endpoint() -> str | None:
-    return os.environ.get("HARNESS_FOUNDRY_ENDPOINT")
+def _project_endpoint() -> str | None:
+    return os.environ.get("FOUNDRY_PROJECT_ENDPOINT")
 
 
-def _api_key() -> str | None:
-    key = os.environ.get("HARNESS_FOUNDRY_API_KEY")
-    return key or None
+def _deployment() -> str:
+    return os.environ.get("HARNESS_FOUNDRY_DEPLOYMENT", "model-router")
 
 
-def _deployment() -> str | None:
-    return os.environ.get("HARNESS_FOUNDRY_DEPLOYMENT")
-
-
-def _client():  # type: ignore[no-untyped-def]
-    endpoint = _endpoint()
+def _build_agent(name: str, instructions: str):  # type: ignore[no-untyped-def]
+    endpoint = _project_endpoint()
     if not endpoint:
-        raise LensUnavailable("HARNESS_FOUNDRY_ENDPOINT not configured")
-    if _api_key():
-        from azure.ai.inference.aio import ChatCompletionsClient
-        from azure.core.credentials import AzureKeyCredential
-
-        key = _api_key()
-        assert key is not None
-        return ChatCompletionsClient(endpoint=endpoint, credential=AzureKeyCredential(key)), False
-    # Native credential chain (managed identity in Azure, dev creds locally)
-    # with the Foundry audience forced — azure-ai-inference does not derive it.
-    from azure.ai.inference.aio import ChatCompletionsClient
+        raise LensUnavailable("FOUNDRY_PROJECT_ENDPOINT not configured")
+    # Native MAF: Agent + FoundryChatClient (Entra credential chain).
+    from agent_framework import Agent
+    from agent_framework.foundry import FoundryChatClient
     from azure.identity.aio import DefaultAzureCredential
 
-    from harness.credentials import ScopedAsyncCredential
-
-    credential = ScopedAsyncCredential(DefaultAzureCredential())
-    return ChatCompletionsClient(endpoint=endpoint, credential=credential), True
+    client = FoundryChatClient(
+        project_endpoint=endpoint,
+        model=_deployment(),
+        credential=DefaultAzureCredential(),
+    )
+    return Agent(
+        client=client,
+        name=name,
+        instructions=instructions,
+        default_options={"temperature": 0.0},
+    )
 
 
 _SYSTEM = (
@@ -96,48 +93,28 @@ class LLMLens(Lens):
     category: FindingCategory
 
     async def run(self, ctx: LensContext) -> list[Finding]:
-        client, uses_aio_credential = _client()
-        deployment = _deployment() or self.name
+        agent = _build_agent(self.name, _SYSTEM)
         combined_diff = "\n\n".join(f"--- {lf.path}\n{lf.content}" for lf in ctx.files if lf.added_lines)
         if not combined_diff.strip():
             return []
 
-        messages = [
-            {"role": "system", "content": _SYSTEM},
-            {
-                "role": "user",
-                "content": _USER_TMPL.format(
+        async with agent:
+            response = await agent.run(
+                _USER_TMPL.format(
                     focus=_FOCUS[self.focus_key],
                     diff=combined_diff.replace("```", "'''"),
-                ),
-            },
-        ]
-
-        try:
-            from azure.ai.inference.models import SystemMessage, UserMessage
-
-            response = await client.complete(
-                messages=[SystemMessage(_SYSTEM), UserMessage(content=messages[1]["content"])],
-                model=deployment,
-                temperature=0.0,
-                max_tokens=1500,
+                )
             )
-        finally:
-            if uses_aio_credential:
-                await client.close()
 
-        raw = response.choices[0].message.content or ""
         usage = getattr(response, "usage", None)
         self.last_usage = {
-            "input_tokens": getattr(usage, "prompt_tokens", 0) or 0,
-            "output_tokens": getattr(usage, "completion_tokens", 0) or 0,
+            "input_tokens": getattr(usage, "input_tokens", 0) or 0,
+            "output_tokens": getattr(usage, "output_tokens", 0) or 0,
         }
         path_hint = ctx.files[0].path if ctx.files else ""
-        return self._parse(raw, ctx, path_hint)
+        return self._parse(response.text or "", ctx, path_hint)
 
     def _parse(self, raw: str, ctx: LensContext, path_hint: str) -> list[Finding]:
-        import json
-
         try:
             start, end = raw.find("["), raw.rfind("]")
             items = json.loads(raw[start : end + 1]) if start != -1 and end != -1 else []
