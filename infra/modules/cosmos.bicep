@@ -15,7 +15,7 @@ resource account 'Microsoft.DocumentDB/databaseAccounts@2024-08-15' = {
   }
 }
 
-resource db 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-05-15' = {
+resource db 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-08-15' = {
   parent: account
   name: sqlDatabaseName
   properties: {
