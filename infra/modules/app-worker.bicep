@@ -11,6 +11,8 @@ param cosmosEndpoint string
 param blobEndpoint string
 param foundryEndpoint string
 param foundryDeployment string
+@secure()
+param foundryApiKey string = 'PLACEHOLDER'
 
 // Worker runs as a Container App scaled by Service Bus queue length (KEDA).
 // Scale-to-zero keeps idle cost at zero; continuous consume mode processes
@@ -28,6 +30,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
       { server: acrLoginServer, identity: identityId }
     ]
       secrets: [
+        { name: 'foundry-api-key', value: foundryApiKey }
         { name: 'sb-listen-conn', value: serviceBusListenerConnectionString }
       ]
     }
@@ -42,6 +45,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'HARNESS_COSMOS_ENDPOINT', value: cosmosEndpoint }
             { name: 'HARNESS_BLOB_ENDPOINT', value: blobEndpoint }
             { name: 'HARNESS_FOUNDRY_ENDPOINT', value: foundryEndpoint }
+            { name: 'HARNESS_FOUNDRY_API_KEY', secretRef: 'foundry-api-key' }
             { name: 'HARNESS_FOUNDRY_DEPLOYMENT', value: foundryDeployment }
           ]
         }

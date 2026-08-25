@@ -14,3 +14,6 @@ COPY src/ ./src/
 RUN uv export --frozen --no-hashes --no-emit-project --extra azure --extra api --extra mcp -o /tmp/requirements.txt \
     && uv pip install --system --no-cache -r /tmp/requirements.txt \
     && uv pip install --system --no-cache --no-deps .
+
+EXPOSE 8000
+CMD ["uvicorn", "controlplane:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

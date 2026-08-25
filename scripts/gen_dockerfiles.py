@@ -14,22 +14,30 @@ COPY pyproject.toml uv.lock ./
 COPY src/ ./src/
 
 # Deterministic deps: export from committed lockfile, install app without deps.
-RUN {extra_flags} -o /tmp/requirements.txt \\
+RUN uv export --frozen --no-hashes --no-emit-project {extra_flags} -o /tmp/requirements.txt \\
     && uv pip install --system --no-cache -r /tmp/requirements.txt \\
     && uv pip install --system --no-cache --no-deps .
 """
 
 SERVICES = {
-    "controlplane": ("azure api mcp", 'EXPOSE 8000\nCMD ["uvicorn", "controlplane:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]\n'),
-    "mcpserver": ("azure api mcp", 'EXPOSE 8000\nCMD ["uvicorn", "mcpserver:create_mcp_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]\n'),
-    "worker": ("azure", 'CMD ["python", "-m", "worker.runner"]\n'),
+    "controlplane": {
+        "extras": ["azure", "api", "mcp"],
+        "tail": 'EXPOSE 8000\nCMD ["uvicorn", "controlplane:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]\n',
+    },
+    # Plain FastAPI JSON-RPC (MCP wire protocol) — no MCP SDK dependency.
+    "mcpserver": {
+        "extras": ["azure", "api"],
+        "tail": 'EXPOSE 8000\nCMD ["uvicorn", "mcpserver:create_mcp_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]\n',
+    },
+    "worker": {
+        "extras": ["azure"],
+        "tail": 'CMD ["python", "-m", "worker.runner"]\n',
+    },
 }
 
 root = Path(__file__).resolve().parent.parent / "docker"
-for svc, (extras, tail) in SERVICES.items():
-    flags = " ".join(f"--extra {e}" for e in extras.split())
-    (root / f"{svc}.Dockerfile").write_text(
-        TEMPLATE.format(extras=extras, extra_flags=f"uv export --frozen --no-hashes --no-emit-project {flags}"),
-        encoding="utf8",
-    )
+for svc, cfg in SERVICES.items():
+    flags = " ".join(f"--extra {e}" for e in cfg["extras"])
+    text = TEMPLATE.format(extra_flags=flags) + "\n" + cfg["tail"]
+    (root / f"{svc}.Dockerfile").write_text(text, encoding="utf8")
     print(f"wrote docker/{svc}.Dockerfile")

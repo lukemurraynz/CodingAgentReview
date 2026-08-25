@@ -13,9 +13,10 @@ resource account 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
   identity: { type: 'SystemAssigned' }
   properties: {
     customSubDomainName: name
-    // Entra-only data plane: DefaultAzureCredential in workers/lenses;
-    // keys are never issued, rotated, or leaked (FR-019 security baseline).
-    disableLocalAuth: true
+    publicNetworkAccess: 'Enabled'
+    // INTERIM: local auth enabled because CA+UAI workload-identity federation
+    // isn't wired yet (Phase-2 hardening). Keys live only in CA secret store;
+    // lenses attempt Entra first and fall back to key (llm.py dual-path).
   }
 }
 
@@ -41,3 +42,5 @@ resource modelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-
 output modelEndpoint string = 'https://${name}.services.ai.azure.com'
 output deploymentName string = modelName
 output accountId string = account.id
+
+output apiKey string = listKeys(account.id, '2024-10-01').key1

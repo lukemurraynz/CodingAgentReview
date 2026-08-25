@@ -14,3 +14,5 @@ COPY src/ ./src/
 RUN uv export --frozen --no-hashes --no-emit-project --extra azure -o /tmp/requirements.txt \
     && uv pip install --system --no-cache -r /tmp/requirements.txt \
     && uv pip install --system --no-cache --no-deps .
+
+CMD ["python", "-m", "worker.runner"]
