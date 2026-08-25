@@ -1,5 +1,5 @@
 """Azure DevOps adapter."""
 
-from .adapter import AzureDevOpsAdapter
+from .adapter import AzureDevOpsAdapter, LinkedWorkItemCompleteness, WorkItemSummary
 
-__all__ = ["AzureDevOpsAdapter"]
+__all__ = ["AzureDevOpsAdapter", "LinkedWorkItemCompleteness", "WorkItemSummary"]

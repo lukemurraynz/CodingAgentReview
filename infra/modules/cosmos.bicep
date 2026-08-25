@@ -1,7 +1,9 @@
 param accountName string
 param location string
+param retentionDays int = 365
 
 var sqlDatabaseName = 'harness'
+var ttlSeconds = retentionDays * 86400
 
 resource account 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = {
   name: accountName
@@ -31,13 +33,13 @@ resource container 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/container
   parent: db
   name: c
   properties: {
-    resource: {
-      id: c
-      partitionKey: { paths: ['/pk'], kind: 'Hash' }
-      defaultTtl: c == 'episodes' ? 31536000 : -1
+      resource: {
+        id: c
+        partitionKey: { paths: ['/pk'], kind: 'Hash' }
+        defaultTtl: contains(['findings', 'reviewRuns', 'episodes'], c) ? ttlSeconds : -1
+      }
+      options: {}
     }
-    options: {}
-  }
 }]
 
 output documentEndpoint string = account.properties.documentEndpoint

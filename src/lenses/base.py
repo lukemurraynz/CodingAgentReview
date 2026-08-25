@@ -19,6 +19,10 @@ class LensFile:
     path: str
     content: str
     added_lines: frozenset[int] = field(default_factory=frozenset)
+    line_map: tuple[int, ...] = ()
+    patch_lines: tuple[str, ...] = ()
+    deleted: bool = False
+    old_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -35,5 +39,7 @@ class LensContext:
 @runtime_checkable
 class Lens(Protocol):
     name: str
+    version: str
+    not_flagged: tuple[str, ...]
 
     def run(self, ctx: LensContext) -> Awaitable[list[Finding]]: ...

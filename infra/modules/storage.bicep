@@ -1,5 +1,6 @@
 param name string
 param location string
+param retentionDays int = 365
 
 var blobContainerName = 'evidence'
 
@@ -22,6 +23,39 @@ resource blobSvc 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
 resource evidenceContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
   parent: blobSvc
   name: blobContainerName
+}
+
+resource evidenceLifecyclePolicy 'Microsoft.Storage/storageAccounts/managementPolicies@2025-01-01' = {
+  parent: stg
+  name: 'default'
+  properties: {
+    policy: {
+      rules: [
+        {
+          name: 'deleteEvidenceAfterRetention'
+          enabled: true
+          type: 'Lifecycle'
+          definition: {
+            filters: {
+              blobTypes: [
+                'blockBlob'
+              ]
+              prefixMatch: [
+                '${blobContainerName}/'
+              ]
+            }
+            actions: {
+              baseBlob: {
+                delete: {
+                  daysAfterModificationGreaterThan: retentionDays
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
 }
 
 output blobEndpoint string = stg.properties.primaryEndpoints.blob

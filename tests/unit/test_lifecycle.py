@@ -2,7 +2,7 @@
 
 import pytest
 
-from harness.lifecycle import LifecycleError, can_transition, transition
+from harness.lifecycle import LifecycleError, apply, can_transition, transition
 from harness.models import Evidence, Finding, FindingCategory, Severity, Waiver
 
 
@@ -45,6 +45,12 @@ class TestLegalTransitions:
         assert out.waiver is not None
         assert out.waiver.approver == "lead"
 
+    def test_reopen_from_waived_preserves_waiver(self):
+        waiver = Waiver(approver="lead", rationale="accepted")
+        waived = transition(_finding("confirmed"), "waived", waiver=waiver)
+        reopened = apply(waived, "reopened")
+        assert reopened.waiver == waiver
+
 
 class TestIllegalTransitions:
     @pytest.mark.parametrize(
@@ -70,6 +76,12 @@ class TestIllegalTransitions:
         # confirmed -> waived requires a waiver record argument
         with pytest.raises(LifecycleError, match="requires a waiver record"):
             transition(_finding("confirmed"), "waived")
+
+    def test_waiver_is_immutable_once_written(self):
+        waiver = Waiver(approver="lead", rationale="accepted")
+        waived = transition(_finding("confirmed"), "waived", waiver=waiver)
+        with pytest.raises(LifecycleError, match="immutable"):
+            apply(waived, "reopened", waiver=Waiver(approver="other", rationale="changed"))
 
 
 class TestReopenProvenance:

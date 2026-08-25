@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+from collections.abc import Awaitable, Callable
 
 import pytest
 from fastapi.testclient import TestClient
@@ -36,6 +37,16 @@ def _pr_body() -> bytes:
             "repository": {"full_name": "org/repo"},
         }
     ).encode()
+
+
+def _fake_enqueue_counter() -> tuple[dict[str, int], Callable[[object], Awaitable[None]]]:
+    state = {"count": 0}
+
+    async def _enqueue(payload: object) -> None:
+        del payload
+        state["count"] += 1
+
+    return state, _enqueue
 
 
 def test_healthz_no_azure_deps(client):
@@ -72,6 +83,7 @@ def test_accepted_when_queue_configured(client, monkeypatch):
         def enqueue(self, payload):
             async def _send():
                 return None
+
             return _send()
 
     monkeypatch.setenv("HARNESS_SERVICEBUS_NS", "fake")
@@ -83,6 +95,99 @@ def test_accepted_when_queue_configured(client, monkeypatch):
     assert "changeId" in r.json() and "eventId" in r.json()
 
 
-def test_admin_specifications_shape(client):
-    r = client.get("/admin/specifications")
+def test_duplicate_webhook_is_deduplicated(client, monkeypatch):
+    state, enqueue = _fake_enqueue_counter()
+
+    monkeypatch.setenv("HARNESS_SERVICEBUS_NS", "fake")
+    import controlplane as cp
+
+    cp._dedup_registry.clear()
+    monkeypatch.setattr(cp, "_send_event", enqueue)
+    monkeypatch.setattr(cp, "_events", cp.EventEmitter(cp._send_event))
+
+    body = _pr_body()
+    first = client.post("/webhooks/github", content=body, headers=_signed(body))
+    second = client.post("/webhooks/github", content=body, headers=_signed(body))
+
+    assert first.status_code == 202
+    assert first.json()["deduplicated"] is False
+    assert second.status_code == 202
+    assert second.json() == {"accepted": True, "changeId": "org/repo#7@h1", "deduplicated": True}
+    assert state["count"] == 2
+
+
+def test_different_sha_is_not_deduplicated(client, monkeypatch):
+    state, enqueue = _fake_enqueue_counter()
+
+    monkeypatch.setenv("HARNESS_SERVICEBUS_NS", "fake")
+    import controlplane as cp
+
+    cp._dedup_registry.clear()
+    monkeypatch.setattr(cp, "_send_event", enqueue)
+    monkeypatch.setattr(cp, "_events", cp.EventEmitter(cp._send_event))
+
+    body_one = _pr_body()
+    body_two = json.dumps(
+        {
+            "action": "opened",
+            "number": 7,
+            "pull_request": {"number": 7, "head": {"sha": "h2"}, "base": {"sha": "b1"}},
+            "repository": {"full_name": "org/repo"},
+        }
+    ).encode()
+
+    first = client.post("/webhooks/github", content=body_one, headers=_signed(body_one))
+    second = client.post("/webhooks/github", content=body_two, headers=_signed(body_two))
+
+    assert first.status_code == 202 and first.json()["deduplicated"] is False
+    assert second.status_code == 202 and second.json()["deduplicated"] is False
+    assert state["count"] == 4
+
+
+def test_dedup_ttl_expiry_allows_reenqueue(client, monkeypatch):
+    state, enqueue = _fake_enqueue_counter()
+
+    monkeypatch.setenv("HARNESS_SERVICEBUS_NS", "fake")
+    monkeypatch.setenv("HARNESS_DEDUP_TTL_SECONDS", "10")
+    import controlplane as cp
+
+    cp._dedup_registry.clear()
+    monkeypatch.setattr(cp, "_send_event", enqueue)
+    monkeypatch.setattr(cp, "_events", cp.EventEmitter(cp._send_event))
+
+    ticks = iter([100.0, 105.0, 111.0])
+    monkeypatch.setattr(cp, "_monotonic", lambda: next(ticks))
+
+    body = _pr_body()
+    first = client.post("/webhooks/github", content=body, headers=_signed(body))
+    second = client.post("/webhooks/github", content=body, headers=_signed(body))
+    third = client.post("/webhooks/github", content=body, headers=_signed(body))
+
+    assert first.json()["deduplicated"] is False
+    assert second.json()["deduplicated"] is True
+    assert third.json()["deduplicated"] is False
+    assert state["count"] == 4
+
+
+def test_admin_specifications_shape(client, tmp_path):
+    r = client.get("/admin/specifications", params={"root": str(tmp_path)})
     assert r.status_code == 200 and r.json() == []
+
+    (tmp_path / "specs").mkdir()
+    (tmp_path / "specs" / "specifications.json").write_text(
+        '{"specifications": [{"id": "api-contract", "title": "API contract", "applies_to": ["api"]}]}',
+        encoding="utf-8",
+    )
+    r = client.get("/admin/specifications", params={"root": str(tmp_path)})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    assert "specifications.json" in body[0]["sourcePath"]
+    assert body[0]["errors"] == []
+    assert body[0]["specification"]["id"] == "api-contract"
+
+    (tmp_path / "specs" / "specifications.json").write_text("not json", encoding="utf-8")
+    r = client.get("/admin/specifications", params={"root": str(tmp_path)})
+    assert r.status_code == 200
+    assert r.json()[0]["specification"] is None
+    assert "invalid JSON" in r.json()[0]["errors"][0]["message"]

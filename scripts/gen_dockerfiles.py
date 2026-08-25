@@ -22,12 +22,20 @@ RUN uv export --frozen --no-hashes --no-emit-project {extra_flags} -o /tmp/requi
 SERVICES = {
     "controlplane": {
         "extras": ["azure", "api", "mcp"],
-        "tail": 'EXPOSE 8000\nCMD ["uvicorn", "controlplane:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]\n',
+        "tail": (
+            'EXPOSE 8000\n'
+            'CMD ["uvicorn", "controlplane:create_app", '
+            '"--factory", "--host", "0.0.0.0", "--port", "8000"]\n'
+        ),
     },
     # Plain FastAPI JSON-RPC (MCP wire protocol) — no MCP SDK dependency.
     "mcpserver": {
         "extras": ["azure", "api"],
-        "tail": 'EXPOSE 8000\nCMD ["uvicorn", "mcpserver:create_mcp_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]\n',
+        "tail": (
+            'EXPOSE 8000\n'
+            'CMD ["uvicorn", "mcpserver:create_mcp_app", '
+            '"--factory", "--host", "0.0.0.0", "--port", "8000"]\n'
+        ),
     },
     "worker": {
         "extras": ["azure"],
@@ -38,6 +46,6 @@ SERVICES = {
 root = Path(__file__).resolve().parent.parent / "docker"
 for svc, cfg in SERVICES.items():
     flags = " ".join(f"--extra {e}" for e in cfg["extras"])
-    text = TEMPLATE.format(extra_flags=flags) + "\n" + cfg["tail"]
+    text = TEMPLATE.format(extra_flags=flags) + "\n" + str(cfg["tail"])
     (root / f"{svc}.Dockerfile").write_text(text, encoding="utf8")
     print(f"wrote docker/{svc}.Dockerfile")

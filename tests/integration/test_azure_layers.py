@@ -5,11 +5,12 @@ them they are skipped — no emulators are simulated locally (Real Integration
 Policy: fail fast / skip honestly rather than fake success).
 """
 
+import asyncio
 import os
 
 import pytest
 
-from harness.queue import QUEUE_NAME, ReviewQueuePublisher
+from harness.queue import QUEUE_NAME, ReviewQueueConsumer, ReviewQueuePublisher
 from harness.repository import HarnessRepository
 
 has_servicebus = bool(os.environ.get("HARNESS_SERVICEBUS_NS"))
@@ -37,9 +38,25 @@ async def test_finding_round_trip() -> None:
 
 
 @pytest.mark.skipif(not has_servicebus, reason="HARNESS_SERVICEBUS_NS not configured")
-def test_queue_send_receive_contract() -> None:
+def test_queue_send_receive_round_trip() -> None:
+    """T013 live proof: a message we send is received intact and completed (at-least-once)."""
     assert QUEUE_NAME == "review-requests"
-    publisher = ReviewQueuePublisher()
-    send = publisher.enqueue({"changeId": "it-c1", "headSha": "abc"})
-    # Real send/receive loop is exercised by the worker integration suite (T040).
-    assert callable(send)
+    received: list[object] = []
+
+    async def handler(payload: object) -> None:
+        received.append(payload)
+
+    async def scenario() -> None:
+        consumer = ReviewQueueConsumer()
+        loop = asyncio.create_task(consumer.receive(handler, drain_seconds=25))
+        await asyncio.sleep(3)  # let the receiver connect before sending
+        await ReviewQueuePublisher().enqueue({"changeId": "it-c1", "headSha": "abc"})
+        for _ in range(30):
+            if received:
+                break
+            await asyncio.sleep(0.5)
+        loop.cancel()
+        await asyncio.gather(loop, return_exceptions=True)
+
+    asyncio.run(scenario())
+    assert any(isinstance(p, dict) and p.get("changeId") == "it-c1" for p in received)

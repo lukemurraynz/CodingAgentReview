@@ -49,11 +49,12 @@ class Finding(BaseModel):
 
     @model_validator(mode="after")
     def _waiver_status_consistency(self) -> "Finding":
-        # A finding is either waived (with an immutable waiver record) or not (no record).
+        # A waiver is created when a finding is waived, then retained immutably as
+        # audit history if the issue later reopens/resolves/stales.
         if self.status == "waived" and self.waiver is None:
             raise ValueError("waived findings require a waiver record")
-        if self.status != "waived" and self.waiver is not None:
-            raise ValueError("waiver record is only valid on waived findings")
+        if self.waiver is not None and self.status in {"candidate", "confirmed"}:
+            raise ValueError("waiver record is only valid on waived or post-waiver findings")
         return self
 
     @model_validator(mode="after")

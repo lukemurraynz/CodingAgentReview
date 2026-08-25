@@ -8,13 +8,15 @@ exact matched evidence; unsupported suspicions are never emitted.
 from __future__ import annotations
 
 import re
+from typing import Final
 
 from harness.dedup import make_key
 from harness.models import Evidence, Finding, FindingCategory, Severity
 
-from .base import Lens, LensContext
+from ._line_mapping import actual_lineno, mapped_lines
+from .base import Lens, LensContext, LensFile
 
-_LINE_COUNT_LIMIT = 1000
+_LINE_COUNT_LIMIT: Final = 1000
 
 _NOOP_CLASS = re.compile(r"class\s+(_*\w*Noop\w*(?:Subscriber|Handler|Client|Listener|Detector))\b")
 _NOOP_INSTANTIATION = re.compile(r"\b(_*\w*Noop\w*(?:Subscriber|Handler|Client|Listener|Detector))\s*\(")
@@ -51,6 +53,29 @@ def _added_blocks(content: str, added: frozenset[int]) -> list[tuple[int, list[s
     return blocks
 
 
+def _added_blocks_with_map(
+    content: str, added: frozenset[int], line_map: tuple[int, ...]
+) -> list[tuple[int, list[str], list[int]]]:
+    """Contiguous runs of added lines with compact and actual line numbers."""
+    blocks: list[tuple[int, list[str], list[int]]] = []
+    current_lines: list[str] = []
+    current_actuals: list[int] = []
+    start = 0
+    for compact_lineno, line in mapped_lines(content, line_map):
+        if compact_lineno in added:
+            if not current_lines:
+                start = compact_lineno
+            current_lines.append(line)
+            current_actuals.append(line_map[compact_lineno - 1] if line_map else compact_lineno)
+        elif current_lines:
+            blocks.append((start, current_lines, current_actuals))
+            current_lines = []
+            current_actuals = []
+    if current_lines:
+        blocks.append((start, current_lines, current_actuals))
+    return blocks
+
+
 def _find_block_span(lines: list[str], idx: int) -> tuple[int, int]:
     """Return (start_idx, end_idx_exclusive) of the indented block starting at idx."""
     base_indent = len(lines[idx]) - len(lines[idx].lstrip())
@@ -73,7 +98,7 @@ class StructuralLens(Lens):
     async def run(self, ctx: LensContext) -> list[Finding]:
         findings: list[Finding] = []
         for lf in ctx.files:
-            findings.extend(self._scan_file(ctx, lf.path, lf.content, lf.added_lines))
+            findings.extend(self._scan_file(ctx, lf))
         findings.sort(key=lambda f: (f.evidence[0].path, f.evidence[0].line_start or 0, f.title))
         return findings
 
@@ -109,10 +134,11 @@ class StructuralLens(Lens):
             dedup_key=make_key(path, content),
         )
 
-    def _scan_file(
-        self, ctx: LensContext, path: str, content: str, added: frozenset[int]
-    ) -> list[Finding]:
+    def _scan_file(self, ctx: LensContext, lf: LensFile) -> list[Finding]:
         findings: list[Finding] = []
+        path = lf.path
+        content = lf.content
+        added = lf.added_lines
         lines = content.splitlines()
 
         # Rule: file-growth (whole-file metric; anchored at line 1)
@@ -129,12 +155,12 @@ class StructuralLens(Lens):
                 )
             )
 
-        for start, block in _added_blocks(content, added):
+        for _start, block, actuals in _added_blocks_with_map(content, added, lf.line_map):
             text = "\n".join(block)
 
             # Rule: noop-wiring — instantiation of a *Noop* class in production code
             for m in _NOOP_INSTANTIATION.finditer(text):
-                lineno = start + text[: m.start()].count("\n")
+                lineno = actuals[text[: m.start()].count("\n")]
                 findings.append(
                     self._finding(
                         ctx, path, content, lineno,
@@ -155,7 +181,7 @@ class StructuralLens(Lens):
                     if _LOG_CALL.search(body) and (
                         _SILENT_CONTINUE.search(body) or not re.search(r"\braise\b", body)
                     ):
-                        lineno = start + i
+                        lineno = actuals[i]
                         findings.append(
                             self._finding(
                                 ctx, path, content, lineno,
@@ -187,7 +213,7 @@ class StructuralLens(Lens):
                         if not _FABRICATED_RETURN.search(m.group(0))
                     ]
                     if returns and not observable:
-                        lineno = start + i
+                        lineno = actuals[i]
                         findings.append(
                             self._finding(
                                 ctx, path, content, lineno,
@@ -201,7 +227,7 @@ class StructuralLens(Lens):
 
             # Rule: optional-noop-default — fallback construction in signatures/bodies
             for m in _OPTIONAL_NOOP_DEFAULT.finditer(text):
-                lineno = start + text[: m.start()].count("\n")
+                lineno = actuals[text[: m.start()].count("\n")]
                 findings.append(
                     self._finding(
                         ctx, path, content, lineno,
@@ -224,7 +250,7 @@ class StructuralLens(Lens):
             )
             if uses_elsewhere == 0:
                 continue
-            lineno = content[: m.start()].count("\n") + 1
+            lineno = actual_lineno(content, m.start(), lf.line_map)
             if lineno in added:
                 findings.append(
                     self._finding(

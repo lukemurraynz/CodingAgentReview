@@ -14,7 +14,8 @@ import httpx
 
 from harness.models import Change, ChangeType, Finding, GitProvider
 
-from ..base import ProviderAdapter
+from ..base import AnnotationReport, ProviderAdapter, ProviderHttpError
+from ..formatting import SUMMARY_MARKER, build_comment_body
 
 _API = "https://api.github.com"
 _DIFF_ACCEPT = "application/vnd.github.v3.diff"
@@ -95,41 +96,109 @@ class GitHubAdapter(ProviderAdapter):
         token = _token()
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(url, headers=headers)
-            resp.raise_for_status()
-            return resp.text
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(url, headers=headers)
+                resp.raise_for_status()
+                return resp.text
+        except httpx.HTTPStatusError as exc:
+            raise ProviderHttpError(
+                self.name,
+                "fetch_diff",
+                url=str(exc.request.url),
+                status_code=exc.response.status_code,
+                detail=exc.response.text,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ProviderHttpError(self.name, "fetch_diff", url=url, detail=str(exc)) from exc
 
-    async def post_annotations(self, change: Change, findings: list[Finding]) -> None:
-        from harness.redaction import redact_text
-
-        lines = ["## Automated review findings", ""]
-        by_severity: dict[str, list[Finding]] = {}
-        for f in findings:
-            by_severity.setdefault(f.severity.value, []).append(f)
-        for sev in ("blocker", "high", "medium", "low", "info"):
-            for f in by_severity.get(sev, []):
-                loc = f.evidence[0].path
-                if f.evidence[0].line_start:
-                    loc += f":{f.evidence[0].line_start}"
-                title, _ = redact_text(f.title)
-                detail, _ = redact_text(f.detail or "")
-                lines.append(f"- **[{sev.upper()}]** `{loc}` — {title}")
-                if detail:
-                    lines.append(f"  {detail}")
-        if len(lines) == 2:
-            lines.append("No blocking findings.")
-
+    async def post_annotations(
+        self,
+        change: Change,
+        findings: list[Finding],
+        report: AnnotationReport | None = None,
+    ) -> None:
         if change.change_type != ChangeType.PULL_REQUEST or change.pr_number is None:
             return  # commit reviews are recorded in state only, no PR thread to post to
+        if not findings:
+            return
         token = _token()
         headers = {"Accept": "application/vnd.github+json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        url = f"{_API}/repos/{change.repo_id}/issues/{change.pr_number}/comments"
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(url, headers=headers, json={"body": "\n".join(lines)})
-            resp.raise_for_status()
+        base_url = f"{_API}/repos/{change.repo_id}"
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                for finding in findings:
+                    evidence = finding.evidence[0]
+                    if evidence.line_start is None:
+                        continue
+                    comment_url = f"{base_url}/pulls/{change.pr_number}/comments"
+                    body = {
+                        "body": build_comment_body([finding], report, include_marker=False),
+                        "commit_id": change.head_sha,
+                        "path": evidence.path,
+                        "line": evidence.line_start,
+                        "side": "RIGHT",
+                    }
+                    resp = await client.post(comment_url, headers=headers, json=body)
+                    resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise ProviderHttpError(
+                self.name,
+                "post_annotations",
+                url=str(exc.request.url),
+                status_code=exc.response.status_code,
+                detail=exc.response.text,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ProviderHttpError(self.name, "post_annotations", url=base_url, detail=str(exc)) from exc
+
+    async def upsert_summary_comment(
+        self,
+        change: Change,
+        findings: list[Finding],
+        report: AnnotationReport | None = None,
+    ) -> None:
+        if change.change_type != ChangeType.PULL_REQUEST or change.pr_number is None:
+            return
+        token = _token()
+        headers = {"Accept": "application/vnd.github+json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        base_url = f"{_API}/repos/{change.repo_id}"
+        issues_comments_url = f"{base_url}/issues/{change.pr_number}/comments"
+        summary_body = build_comment_body(findings, report)
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                existing = await client.get(issues_comments_url, headers=headers)
+                existing.raise_for_status()
+                comments = existing.json()
+                comment_id = _find_existing_comment_id(comments)
+                if comment_id is None:
+                    resp = await client.post(issues_comments_url, headers=headers, json={"body": summary_body})
+                else:
+                    resp = await client.patch(
+                        f"{base_url}/issues/comments/{comment_id}",
+                        headers=headers,
+                        json={"body": summary_body},
+                    )
+                resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise ProviderHttpError(
+                self.name,
+                "upsert_summary_comment",
+                url=str(exc.request.url),
+                status_code=exc.response.status_code,
+                detail=exc.response.text,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ProviderHttpError(
+                self.name,
+                "upsert_summary_comment",
+                url=issues_comments_url,
+                detail=str(exc),
+            ) from exc
 
     @staticmethod
     def event_envelope(source: str, subject: str, data: dict[str, object]) -> dict[str, object]:
@@ -145,3 +214,17 @@ class GitHubAdapter(ProviderAdapter):
             data=data,
         )
         return ev.model_dump(mode="json")
+
+
+def _find_existing_comment_id(comments: object) -> int | None:
+    if not isinstance(comments, list):
+        return None
+    for item in comments:
+        if not isinstance(item, dict):
+            continue
+        body = item.get("body")
+        if isinstance(body, str) and SUMMARY_MARKER in body:
+            comment_id = item.get("id")
+            if isinstance(comment_id, int):
+                return comment_id
+    return None

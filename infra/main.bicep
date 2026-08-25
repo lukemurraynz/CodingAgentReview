@@ -11,6 +11,9 @@ param namePrefix string
 
 param location string = deployment().location
 
+@minValue(30)
+param retentionDays int = 365
+
 @secure()
 param githubWebhookSecret string
 
@@ -81,6 +84,7 @@ module cosmos './modules/cosmos.bicep' = {
   params: {
     accountName: cosmosName
     location: location
+    retentionDays: retentionDays
   }
 }
 
@@ -90,6 +94,7 @@ module storage './modules/storage.bicep' = {
   params: {
     name: stName
     location: location
+    retentionDays: retentionDays
   }
 }
 
@@ -127,6 +132,7 @@ module controlplane './modules/app-controlplane.bicep' = {
     foundryDeployment: foundry.outputs.deploymentName
     foundryProjectEndpoint: foundry.outputs.projectEndpoint
     foundryApiKey: foundry.outputs.apiKey
+    applicationInsightsConnectionString: law.outputs.applicationInsightsConnectionString
   }
 }
 
@@ -145,6 +151,7 @@ module mcpserver './modules/app-mcpserver.bicep' = {
     foundryDeployment: foundry.outputs.deploymentName
     foundryProjectEndpoint: foundry.outputs.projectEndpoint
     foundryApiKey: foundry.outputs.apiKey
+    applicationInsightsConnectionString: law.outputs.applicationInsightsConnectionString
   }
 }
 
@@ -166,6 +173,20 @@ module worker './modules/app-worker.bicep' = {
     foundryDeployment: foundry.outputs.deploymentName
     foundryProjectEndpoint: foundry.outputs.projectEndpoint
     foundryApiKey: foundry.outputs.apiKey
+    applicationInsightsConnectionString: law.outputs.applicationInsightsConnectionString
+  }
+}
+
+module monitor './modules/monitor.bicep' = {
+  name: 'monitor'
+  scope: rg
+  params: {
+    namePrefix: namePrefix
+    location: location
+    applicationInsightsId: law.outputs.applicationInsightsId
+    serviceBusNamespaceId: sb.outputs.namespaceId
+    serviceBusQueueName: sb.outputs.queueName
+    cosmosAccountId: cosmos.outputs.accountId
   }
 }
 

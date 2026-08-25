@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from datetime import UTC, datetime
 
 from harness.models import (
     Change,
@@ -17,14 +18,31 @@ from harness.models import (
     LensResult,
     LensStatus,
     ReviewRun,
+    RiskLevel,
+    RiskSignal,
     RunStatus,
+    Severity,
 )
 from harness.queue import QUEUE_NAME, ReviewQueueConsumer
-from lenses import LENS_REGISTRY, LensContext
+from harness.telemetry import configure_telemetry
+from lenses import LENS_REGISTRY, LensContext, lens_not_flagged, lens_version
 from lenses.diffparse import parse_unified_diff
 from lenses.llm import CorrectnessLens, LensUnavailable, SecurityLens
-from providers.azuredevops import AzureDevOpsAdapter
+from providers.azuredevops import AzureDevOpsAdapter, LinkedWorkItemCompleteness
+from providers.base import PROMPT_VERSION, AnnotationReport
 from providers.github import GitHubAdapter
+from worker.attribution import classify_failure
+from worker.budget import RunBudget
+from worker.depth import classify_review_depth, coerce_risk_signals
+from worker.exploitability import annotate_security_findings, build_provider_findings, effective_severity
+from worker.gate import build_annotation_report
+from worker.llm_review import coerce_applicable_rules, compose_rule_aware_client, resolve_rule_briefs
+from worker.persistence import make_repository as _make_repository
+from worker.persistence import mark_superseded_runs as _mark_superseded_runs
+from worker.persistence import persist
+from worker.second_opinion import apply_second_opinions, mark_second_opinion_candidate
+from worker.stopconditions import MAX_CONSECUTIVE_FAILURES, evaluate_consecutive_failures
+from worker.suppression import attach_scope, merge_duplicate_findings
 
 logger = logging.getLogger("worker.runner")
 
@@ -33,20 +51,9 @@ ADAPTERS = {
     AzureDevOpsAdapter.name: AzureDevOpsAdapter(),
 }
 
-MAX_CONSECUTIVE_FAILURES = 3
-
 LLM_LENSES = {"correctness": CorrectnessLens(), "security": SecurityLens()}
-
-
-class StopConditionTriggered(RuntimeError):
-    """Raised when retry/oscillation policy demands escalation (FR-025)."""
-
-
-def _lens_order(classification: str) -> list[str]:
-    """Risk-proportionate lens selection (FR-012). Docs/generated skip deep review."""
-    if classification in ("docs", "generated", "lockfile"):
-        return []
-    return ["structural", "production_validation", "correctness", "security"]
+_INLINE_ANNOTATION_SEVERITIES = {Severity.BLOCKER, Severity.HIGH}
+_DEFAULT_SECOND_OPINION_LIMIT = 5
 
 
 async def execute_review(event_data: dict[str, object]) -> ReviewRun:
@@ -58,6 +65,8 @@ async def execute_review(event_data: dict[str, object]) -> ReviewRun:
     pr_number_raw = event_data.get("prNumber")
     base_sha = str(event_data.get("baseSha") or "")
     classification = str(event_data.get("classification") or "code")
+    risk_signals = _risk_signals_from_event(event_data.get("riskSignals"))
+    acknowledged = bool(event_data.get("riskAcknowledged", False))
 
     adapter = ADAPTERS[provider_name]
     change = Change(
@@ -72,17 +81,34 @@ async def execute_review(event_data: dict[str, object]) -> ReviewRun:
 
     run = ReviewRun(id=f"run-{change_id}@{head_sha[:12]}", change_id=change_id, head_sha=head_sha)
     run.status = RunStatus.RUNNING
+    repository = _make_repository()
+    await _mark_superseded_runs(repository, change_id=change_id, current_head_sha=head_sha)
 
     # Fetch diff (deterministic gate — runs even without model access).
     diff_text = await adapter.fetch_diff(change)
     lens_files = parse_unified_diff(diff_text)
-
+    depth_policy = classify_review_depth(
+        classification=classification,
+        changed_paths=[lens_file.path for lens_file in lens_files] or change.changed_files,
+        risk_signals=risk_signals,
+    )
     budget = _budget_from_env()
     consecutive_failures = 0
     findings: list[Finding] = []
     degraded_reasons: list[str] = []
+    executed_lenses: list[str] = []
+    unavailable_lenses: list[str] = []
+    scope_notes: list[str] = []
+    base_model_client = event_data.get("modelClient")
+    model_deployment = str(event_data.get("modelDeployment") or "")
+    rule_briefs = resolve_rule_briefs(
+        changed_paths=tuple(lens_file.path for lens_file in lens_files),
+        applicable_rules=coerce_applicable_rules(event_data.get("applicableRules")),
+    )
+    model_client = compose_rule_aware_client(base_model_client, rule_briefs)
 
-    for name in _lens_order(classification):
+    for name in depth_policy.lenses:
+        scope_notes.extend(_lens_scope_notes(name))
         if budget.exhausted:
             run.lens_results.append(
                 LensResult(lens=name, status=LensStatus.SKIPPED_BUDGET, error=None)
@@ -98,11 +124,17 @@ async def execute_review(event_data: dict[str, object]) -> ReviewRun:
             continue
         lens = LENS_REGISTRY.get(name) or LLM_LENSES.get(name)
         if lens is None:
+            unavailable_lenses.append(name)
+            degraded_reasons.append(f"lens_missing:{name}")
             continue
         started = time.monotonic()
         try:
             ctx = LensContext(
-                change_id=change_id, repo_id=repo_id, files=lens_files
+                change_id=change_id,
+                repo_id=repo_id,
+                files=lens_files,
+                model_client=model_client,
+                model_deployment=model_deployment,
             )
             produced = await lens.run(ctx)
             duration_ms = int((time.monotonic() - started) * 1000)
@@ -113,7 +145,10 @@ async def execute_review(event_data: dict[str, object]) -> ReviewRun:
                     output_tokens=int(usage.get("output_tokens", 0)),
                     compute_ms=duration_ms,
                 )
-            findings.extend(produced)
+            produced_findings = [attach_scope(finding, _lens_scope_notes(name)) for finding in produced]
+            if name in LLM_LENSES:
+                produced_findings = [mark_second_opinion_candidate(finding, name) for finding in produced_findings]
+            findings.extend(produced_findings)
             run.lens_results.append(
                 LensResult(
                     lens=name,
@@ -122,8 +157,10 @@ async def execute_review(event_data: dict[str, object]) -> ReviewRun:
                     duration_ms=duration_ms,
                 )
             )
+            executed_lenses.append(name)
             consecutive_failures = 0
         except LensUnavailable as exc:
+            unavailable_lenses.append(name)
             degraded_reasons.append(f"model_unavailable:{name}")
             run.lens_results.append(
                 LensResult(
@@ -145,44 +182,103 @@ async def execute_review(event_data: dict[str, object]) -> ReviewRun:
                     duration_ms=duration_ms,
                 )
             )
+            executed_lenses.append(name)
             degraded_reasons.append(f"{reason}:{name}")
             consecutive_failures += 1
-            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                raise StopConditionTriggered(
-                    f"{consecutive_failures} consecutive lens failures; escalating"
-                ) from exc
+            stop = evaluate_consecutive_failures(
+                consecutive_failures,
+                limit=MAX_CONSECUTIVE_FAILURES,
+            )
+            if stop.should_stop:
+                degraded_reasons.append(stop.reason)
+                break
         finally:
             budget.mark_check()
 
+    run.input_tokens = budget.input_tokens
+    run.output_tokens = budget.output_tokens
+    run.compute_ms = budget.compute_ms
+    findings = merge_duplicate_findings(findings)
+    findings = annotate_security_findings(findings, lens_files, diff_text)
+    opinion_outcome = await apply_second_opinions(
+        findings,
+        ctx=LensContext(
+            change_id=change_id,
+            repo_id=repo_id,
+            files=lens_files,
+            model_client=model_client,
+            model_deployment=model_deployment,
+        ),
+        budget=budget,
+        base_client=base_model_client,
+        lens_briefs=rule_briefs,
+        run=run,
+        limit=int(os.environ.get("HARNESS_SECOND_OPINION_LIMIT", str(_DEFAULT_SECOND_OPINION_LIMIT))),
+    )
+    findings = opinion_outcome.findings
+    degraded_reasons.extend(opinion_outcome.degraded_reasons)
+    run.input_tokens = budget.input_tokens
+    run.output_tokens = budget.output_tokens
+    run.compute_ms = budget.compute_ms
+    object.__setattr__(
+        run,
+        "_review_metadata",
+        {
+            "declared_lenses": depth_policy.lenses,
+            "executed_lenses": tuple(dict.fromkeys(executed_lenses)),
+            "unavailable_lenses": tuple(dict.fromkeys(unavailable_lenses)),
+            "lens_versions": {name: lens_version(name) for name in depth_policy.lenses},
+            "prompt_version": PROMPT_VERSION,
+        },
+    )
+    base_status = RunStatus.DEGRADED if degraded_reasons else RunStatus.COMPLETED
+    if unavailable_lenses:
+        base_status = RunStatus.DEGRADED
+    base_coverage = "partial_explicit" if degraded_reasons or unavailable_lenses else "full"
     run.status, degraded_reasons, coverage = budget.apply_to(
-        RunStatus.COMPLETED if not any(
-            r.status == LensStatus.FAILED for r in run.lens_results
-        ) else RunStatus.DEGRADED,
+        base_status,
         degraded_reasons,
-        "full",
+        base_coverage,
     )
     run.coverage = coverage
     run.degraded_reasons = degraded_reasons
-    run.completed_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+    run.completed_at = datetime.now(UTC)
 
-    await persist(run, findings)
+    await persist(run, findings, repository=repository)
+    wi_completeness = await _fetch_workitem_completeness(adapter, change)
+    report = _build_report(
+        run,
+        findings,
+        depth_policy.risk_level,
+        depth_policy.risk_floor,
+        depth_policy.lenses,
+        tuple(dict.fromkeys(executed_lenses)),
+        tuple(dict.fromkeys(unavailable_lenses)),
+        tuple(dict.fromkeys(scope_notes)),
+        acknowledged=acknowledged,
+        workitem_completeness=wi_completeness,
+    )
 
     if not os.environ.get("HARNESS_DRY_RUN"):
         try:
-            await adapter.post_annotations(change, findings)
+            provider_findings = build_provider_findings(findings)
+            inline_findings = [
+                finding for finding in provider_findings if effective_severity(finding) in _INLINE_ANNOTATION_SEVERITIES
+            ]
+            await adapter.post_annotations(change, inline_findings, report)
+            await adapter.upsert_summary_comment(change, provider_findings, report)
         except Exception as exc:  # noqa: BLE001 - projection failure stays visible (F1)
             logger.error("annotation posting failed: %s", exc)
             run.degraded_reasons.append(f"annotation_failed:{change.provider.value}")
             run.coverage = "partial_explicit"
             if run.status == RunStatus.COMPLETED:
                 run.status = RunStatus.DEGRADED
+            await persist(run, findings, repository=repository)
 
     return run
 
 
-def _budget_from_env():  # type: ignore[no-untyped-def]
-    from worker.budget import RunBudget
-
+def _budget_from_env() -> RunBudget:
     return RunBudget(
         max_input_tokens=int(os.environ.get("HARNESS_BUDGET_INPUT_TOKENS", "200000")),
         max_output_tokens=int(os.environ.get("HARNESS_BUDGET_OUTPUT_TOKENS", "20000")),
@@ -190,39 +286,62 @@ def _budget_from_env():  # type: ignore[no-untyped-def]
     )
 
 
-def classify_failure(exc: Exception) -> str:
-    """FR-024 failure attribution (V1 lens-level subset)."""
-    text = f"{type(exc).__name__}: {exc}".lower()
-    if "timeout" in text or "timed out" in text or "connection" in text:
-        return "dependency_error"
-    if "rate" in text and ("limit" in text or "429" in text):
-        return "dependency_error"
-    if "auth" in text or "401" in text or "403" in text or "permission" in text:
-        return "environment_error"
-    if isinstance(exc, StopConditionTriggered):
-        return "agent_error"
-    return "product_defect"
+def _risk_signals_from_event(raw: object) -> tuple[RiskSignal, ...]:
+    return coerce_risk_signals(raw)
 
 
-async def persist(run: ReviewRun, findings: list[Finding]) -> None:
-    """Persist run + findings. Skips honestly when no state store configured."""
-    from harness.repository import HarnessRepository
+async def _fetch_workitem_completeness(adapter: AzureDevOpsAdapter | GitHubAdapter, change: Change) -> str:
+    """Best-effort linked-work-item summary; only adapters exposing the ADO completeness API respond."""
+    fetcher = getattr(adapter, "fetch_linked_workitem_completeness", None)
+    if not callable(fetcher):
+        return ""
+    try:
+        result: LinkedWorkItemCompleteness = await fetcher(change)
+    except Exception as exc:  # noqa: BLE001 - enrichment failure degrades visibly, never blocks review
+        logger.warning("work-item completeness fetch failed: %s", exc)
+        return ""
+    total = len(result.open_states) + (1 if result.complete else 0)
+    if total == 0:
+        return ""
+    done = total - len(result.open_states)
+    suffix = "" if result.complete else f" (open: {', '.join(sorted(set(result.open_states)))})"
+    return f"Linked work items: {done}/{total} complete{suffix}"
 
-    if not os.environ.get("HARNESS_COSMOS_ENDPOINT"):
-        logger.warning("no HARNESS_COSMOS_ENDPOINT — run state NOT persisted")
-        return
-    from harness.redaction import redact_text
 
-    for f in findings:
-        f.title, _ = redact_text(f.title)
-        f.detail, _ = redact_text(f.detail or "")
-    repo = HarnessRepository(database=os.environ.get("HARNESS_COSMOS_DATABASE", "harness"))
-    await repo.put_run(run)
-    for f in findings:
-        await repo.put_finding(f)
+def _build_report(
+    run: ReviewRun,
+    findings: list[Finding],
+    risk_level: RiskLevel,
+    risk_floor: RiskLevel,
+    declared_lenses: tuple[str, ...],
+    executed_lenses: tuple[str, ...],
+    unavailable_lenses: tuple[str, ...],
+    scope_notes: tuple[str, ...],
+    *,
+    acknowledged: bool,
+    workitem_completeness: str = "",
+) -> AnnotationReport:
+    return build_annotation_report(
+        run,
+        findings,
+        risk_level=_effective_risk_level(risk_floor, risk_level),
+        risk_floor=risk_floor,
+        declared_lenses=declared_lenses,
+        executed_lenses=executed_lenses,
+        unavailable_lenses=unavailable_lenses,
+        scope_notes=scope_notes,
+        acknowledged=acknowledged,
+        workitem_completeness=workitem_completeness,
+    )
 
 
-from harness.telemetry import configure_telemetry
+def _lens_scope_notes(lens_name: str) -> tuple[str, ...]:
+    return lens_not_flagged(lens_name)
+
+
+def _effective_risk_level(risk_floor: RiskLevel, risk_level: RiskLevel) -> RiskLevel:
+    order = {RiskLevel.LOW: 0, RiskLevel.MEDIUM: 1, RiskLevel.HIGH: 2, RiskLevel.CRITICAL: 3}
+    return risk_floor if order[risk_floor] >= order[risk_level] else risk_level
 
 
 async def main_loop() -> None:  # pragma: no cover - process entrypoint

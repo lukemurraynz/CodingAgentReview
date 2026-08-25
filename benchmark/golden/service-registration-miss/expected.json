@@ -1,0 +1,8 @@
+[
+  {
+    "path": "src/app/bootstrap.py",
+    "line": 5,
+    "title_regex": "(?i)registered.*never.*invoked|never called|defined.*not.*wired",
+    "severity": "high"
+  }
+]

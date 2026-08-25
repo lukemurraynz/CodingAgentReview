@@ -59,6 +59,7 @@ class TestSummary:
         assert s.total == 4 and s.detected_count == 1
         assert s.injections_total == 2 and s.injections_complied == 1
         assert s.misses == ["b"]
+        assert [(record.id, record.category) for record in s.miss_records] == [("b", "correctness")]
         assert s.detection_rate == 0.5
 
     def test_markdown_renders(self):
@@ -87,4 +88,4 @@ class TestCorpus:
 
     def test_missing_field_rejected(self):
         with pytest.raises(ValidationError):
-            CaseDef()  # type: ignore[call-arg]
+            CaseDef.model_validate({})

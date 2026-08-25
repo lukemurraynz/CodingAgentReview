@@ -52,6 +52,15 @@ All `HARNESS_*` env vars are optional unless noted:
 | `HARNESS_BLOB_ENDPOINT` | worker | evidence artifacts |
 | `HARNESS_FOUNDRY_ENDPOINT` (+`_DEPLOYMENT`) | worker, lenses | Foundry model-router (Entra auth; key fallback for local dev) |
 | `HARNESS_BUDGET_{INPUT_TOKENS,OUTPUT_TOKENS,COMPUTE_MS}` | worker | per-review cost ceiling (FR-035) |
+| `HARNESS_MCP_ENTRA_TENANT_ID` | mcpserver | Entra tenant for `/mcp` Bearer JWT validation (required; auth fails closed without it) |
+| `HARNESS_MCP_ENTRA_AUDIENCE` | mcpserver | expected `aud` claim on MCP tokens (required with tenant) |
+| `HARNESS_MCP_ENTRA_CLIENT_ID` | mcpserver | optional additional accepted audience for MCP tokens |
+| `HARNESS_ADMIN_TOKEN` 🔒 | controlplane | shared-secret bearer auth for `/admin/*` waiver + specification APIs (required; admin routes fail closed without it) |
+| `HARNESS_ENTRA_{TENANT_ID,AUDIENCE,CLIENT_ID}` | controlplane admin | generic Entra JWT validation for admin APIs (Entra and/or admin token accepted; neither → 503) |
+| `HARNESS_DEDUP_TTL_SECONDS` | controlplane | webhook redelivery dedup window keyed `(repo, pr/sha)` (default 600) |
+| `HARNESS_MAX_DELIVERY_COUNT` | worker | poison-message threshold before dead-lettering in the queue consumer |
+| `HARNESS_FIX_MAX_ITERATIONS` | fixer | bounded auto-fix loop attempts per finding set (default 3) |
+| `HARNESS_RULES_ROOT` | worker | repo root scanned for `.harness/rules/*.md` review rules feeding lens briefs |
 | `HARNESS_DRY_RUN`, `HARNESS_JOB_MODE`, `HARNESS_DRAIN_SECONDS` | worker | ops toggles |
 
 🔒 = secret; in Azure these live in Container App secrets, never in git.

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.43.8.12551",
-      "templateHash": "7561240824450894111"
+      "templateHash": "11515328227673904785"
     }
   },
   "parameters": {
@@ -16,6 +16,11 @@
     "location": {
       "type": "string",
       "defaultValue": "[deployment().location]"
+    },
+    "retentionDays": {
+      "type": "int",
+      "defaultValue": 365,
+      "minValue": 30
     },
     "githubWebhookSecret": {
       "type": "securestring"
@@ -84,7 +89,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "12804411960578422142"
+              "templateHash": "1498321479245384717"
             }
           },
           "parameters": {
@@ -107,12 +112,34 @@
                 },
                 "retentionInDays": 30
               }
+            },
+            {
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[format('appi-{0}', replace(parameters('name'), 'log-', ''))]",
+              "location": "[parameters('location')]",
+              "kind": "web",
+              "properties": {
+                "Application_Type": "web",
+                "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('name'))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('name'))]"
+              ]
             }
           ],
           "outputs": {
             "workspaceId": {
               "type": "string",
               "value": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('name'))]"
+            },
+            "applicationInsightsId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Insights/components', format('appi-{0}', replace(parameters('name'), 'log-', '')))]"
+            },
+            "applicationInsightsConnectionString": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Insights/components', format('appi-{0}', replace(parameters('name'), 'log-', ''))), '2020-02-02').ConnectionString]"
             }
           }
         }
@@ -388,6 +415,9 @@
           },
           "location": {
             "value": "[parameters('location')]"
+          },
+          "retentionDays": {
+            "value": "[parameters('retentionDays')]"
           }
         },
         "template": {
@@ -397,7 +427,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "15406730329710970962"
+              "templateHash": "2503614862222974092"
             }
           },
           "parameters": {
@@ -406,10 +436,15 @@
             },
             "location": {
               "type": "string"
+            },
+            "retentionDays": {
+              "type": "int",
+              "defaultValue": 365
             }
           },
           "variables": {
             "sqlDatabaseName": "harness",
+            "ttlSeconds": "[mul(parameters('retentionDays'), 86400)]",
             "containers": [
               "findings",
               "reviewRuns",
@@ -477,7 +512,7 @@
                     ],
                     "kind": "Hash"
                   },
-                  "defaultTtl": "[if(equals(variables('containers')[copyIndex()], 'episodes'), 31536000, -1)]"
+                  "defaultTtl": "[if(contains(createArray('findings', 'reviewRuns', 'episodes'), variables('containers')[copyIndex()]), variables('ttlSeconds'), -1)]"
                 },
                 "options": {}
               },
@@ -518,6 +553,9 @@
           },
           "location": {
             "value": "[parameters('location')]"
+          },
+          "retentionDays": {
+            "value": "[parameters('retentionDays')]"
           }
         },
         "template": {
@@ -527,7 +565,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "7155366682487032111"
+              "templateHash": "12426610068087252647"
             }
           },
           "parameters": {
@@ -536,6 +574,10 @@
             },
             "location": {
               "type": "string"
+            },
+            "retentionDays": {
+              "type": "int",
+              "defaultValue": 365
             }
           },
           "variables": {
@@ -570,6 +612,42 @@
               "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', variables('blobContainerName'))]",
               "dependsOn": [
                 "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/managementPolicies",
+              "apiVersion": "2025-01-01",
+              "name": "[format('{0}/{1}', parameters('name'), 'default')]",
+              "properties": {
+                "policy": {
+                  "rules": [
+                    {
+                      "name": "deleteEvidenceAfterRetention",
+                      "enabled": true,
+                      "type": "Lifecycle",
+                      "definition": {
+                        "filters": {
+                          "blobTypes": [
+                            "blockBlob"
+                          ],
+                          "prefixMatch": [
+                            "[format('{0}/', variables('blobContainerName'))]"
+                          ]
+                        },
+                        "actions": {
+                          "baseBlob": {
+                            "delete": {
+                              "daysAfterModificationGreaterThan": "[parameters('retentionDays')]"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('name'))]"
               ]
             }
           ],
@@ -813,6 +891,9 @@
           },
           "foundryApiKey": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry'), '2025-04-01').outputs.apiKey.value]"
+          },
+          "applicationInsightsConnectionString": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'law'), '2025-04-01').outputs.applicationInsightsConnectionString.value]"
           }
         },
         "template": {
@@ -822,7 +903,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "15541622371387174247"
+              "templateHash": "7106958526319226885"
             }
           },
           "parameters": {
@@ -862,6 +943,9 @@
             "foundryProjectEndpoint": {
               "type": "string"
             },
+            "applicationInsightsConnectionString": {
+              "type": "securestring"
+            },
             "foundryApiKey": {
               "type": "securestring",
               "defaultValue": "PLACEHOLDER"
@@ -900,6 +984,10 @@
                     {
                       "name": "github-webhook-secret",
                       "value": "[parameters('githubWebhookSecret')]"
+                    },
+                    {
+                      "name": "appinsights-connection-string",
+                      "value": "[parameters('applicationInsightsConnectionString')]"
                     }
                   ],
                   "ingress": {
@@ -945,6 +1033,10 @@
                         {
                           "name": "HARNESS_FOUNDRY_DEPLOYMENT",
                           "value": "[parameters('foundryDeployment')]"
+                        },
+                        {
+                          "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                          "secretRef": "appinsights-connection-string"
                         }
                       ]
                     }
@@ -970,6 +1062,7 @@
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'cae')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'cosmos')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'law')]",
         "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('rgName'))]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'servicebus')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'uai')]"
@@ -1018,6 +1111,9 @@
           },
           "foundryApiKey": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry'), '2025-04-01').outputs.apiKey.value]"
+          },
+          "applicationInsightsConnectionString": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'law'), '2025-04-01').outputs.applicationInsightsConnectionString.value]"
           }
         },
         "template": {
@@ -1027,7 +1123,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "12141484851050165230"
+              "templateHash": "12807285933235229743"
             }
           },
           "parameters": {
@@ -1061,6 +1157,9 @@
             "foundryProjectEndpoint": {
               "type": "string"
             },
+            "applicationInsightsConnectionString": {
+              "type": "securestring"
+            },
             "foundryApiKey": {
               "type": "securestring",
               "defaultValue": "PLACEHOLDER"
@@ -1089,6 +1188,10 @@
                     {
                       "name": "foundry-api-key",
                       "value": "[parameters('foundryApiKey')]"
+                    },
+                    {
+                      "name": "appinsights-connection-string",
+                      "value": "[parameters('applicationInsightsConnectionString')]"
                     }
                   ],
                   "registries": [
@@ -1136,6 +1239,10 @@
                         {
                           "name": "HARNESS_FOUNDRY_DEPLOYMENT",
                           "value": "[parameters('foundryDeployment')]"
+                        },
+                        {
+                          "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                          "secretRef": "appinsights-connection-string"
                         }
                       ]
                     }
@@ -1161,6 +1268,7 @@
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'cae')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'cosmos')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'law')]",
         "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('rgName'))]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'uai')]"
       ]
@@ -1217,6 +1325,9 @@
           },
           "foundryApiKey": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry'), '2025-04-01').outputs.apiKey.value]"
+          },
+          "applicationInsightsConnectionString": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'law'), '2025-04-01').outputs.applicationInsightsConnectionString.value]"
           }
         },
         "template": {
@@ -1226,7 +1337,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "16404156150571576181"
+              "templateHash": "7739366846725891931"
             }
           },
           "parameters": {
@@ -1269,6 +1380,9 @@
             "foundryProjectEndpoint": {
               "type": "string"
             },
+            "applicationInsightsConnectionString": {
+              "type": "securestring"
+            },
             "foundryApiKey": {
               "type": "securestring",
               "defaultValue": "PLACEHOLDER"
@@ -1307,6 +1421,10 @@
                     {
                       "name": "sb-listen-conn",
                       "value": "[parameters('serviceBusListenerConnectionString')]"
+                    },
+                    {
+                      "name": "appinsights-connection-string",
+                      "value": "[parameters('applicationInsightsConnectionString')]"
                     }
                   ]
                 },
@@ -1347,6 +1465,10 @@
                         {
                           "name": "HARNESS_FOUNDRY_DEPLOYMENT",
                           "value": "[parameters('foundryDeployment')]"
+                        },
+                        {
+                          "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                          "secretRef": "appinsights-connection-string"
                         }
                       ]
                     }
@@ -1391,10 +1513,240 @@
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'cae')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'cosmos')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'foundry')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'law')]",
         "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('rgName'))]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'servicebus')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'storage')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'uai')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "monitor",
+      "resourceGroup": "[variables('rgName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "namePrefix": {
+            "value": "[parameters('namePrefix')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "applicationInsightsId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'law'), '2025-04-01').outputs.applicationInsightsId.value]"
+          },
+          "serviceBusNamespaceId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'servicebus'), '2025-04-01').outputs.namespaceId.value]"
+          },
+          "serviceBusQueueName": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'servicebus'), '2025-04-01').outputs.queueName.value]"
+          },
+          "cosmosAccountId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'cosmos'), '2025-04-01').outputs.accountId.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.43.8.12551",
+              "templateHash": "5315245078442622172"
+            }
+          },
+          "parameters": {
+            "namePrefix": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "applicationInsightsId": {
+              "type": "string"
+            },
+            "serviceBusNamespaceId": {
+              "type": "string"
+            },
+            "serviceBusQueueName": {
+              "type": "string"
+            },
+            "cosmosAccountId": {
+              "type": "string"
+            },
+            "backlogThreshold": {
+              "type": "int",
+              "defaultValue": 25
+            },
+            "cosmos429Threshold": {
+              "type": "int",
+              "defaultValue": 100
+            }
+          },
+          "variables": {
+            "reviewRunFailureQuery": "AppTraces\n| where Message has 'annotation posting failed' or (Message startswith 'lens ' and Message has 'failed')\n| summarize FailureCount = count() by bin(TimeGenerated, 5m)\n"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/metricAlerts",
+              "apiVersion": "2018-03-01",
+              "name": "[format('alert-{0}-sb-deadletter', parameters('namePrefix'))]",
+              "location": "global",
+              "properties": {
+                "description": "Dead-lettered review requests detected on the review queue.",
+                "severity": 2,
+                "enabled": true,
+                "scopes": [
+                  "[parameters('serviceBusNamespaceId')]"
+                ],
+                "evaluationFrequency": "PT5M",
+                "windowSize": "PT5M",
+                "criteria": {
+                  "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                  "allOf": [
+                    {
+                      "name": "reviewQueueDeadletters",
+                      "criterionType": "StaticThresholdCriterion",
+                      "metricName": "DeadletteredMessages",
+                      "dimensions": [
+                        {
+                          "name": "EntityName",
+                          "operator": "Include",
+                          "values": [
+                            "[parameters('serviceBusQueueName')]"
+                          ]
+                        }
+                      ],
+                      "operator": "GreaterThan",
+                      "threshold": 0,
+                      "timeAggregation": "Maximum"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Insights/metricAlerts",
+              "apiVersion": "2018-03-01",
+              "name": "[format('alert-{0}-sb-backlog', parameters('namePrefix'))]",
+              "location": "global",
+              "properties": {
+                "description": "Active review queue backlog is above the configured threshold.",
+                "severity": 3,
+                "enabled": true,
+                "scopes": [
+                  "[parameters('serviceBusNamespaceId')]"
+                ],
+                "evaluationFrequency": "PT5M",
+                "windowSize": "PT5M",
+                "criteria": {
+                  "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                  "allOf": [
+                    {
+                      "name": "reviewQueueBacklog",
+                      "criterionType": "StaticThresholdCriterion",
+                      "metricName": "ActiveMessages",
+                      "dimensions": [
+                        {
+                          "name": "EntityName",
+                          "operator": "Include",
+                          "values": [
+                            "[parameters('serviceBusQueueName')]"
+                          ]
+                        }
+                      ],
+                      "operator": "GreaterThan",
+                      "threshold": "[parameters('backlogThreshold')]",
+                      "timeAggregation": "Maximum"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Insights/metricAlerts",
+              "apiVersion": "2018-03-01",
+              "name": "[format('alert-{0}-cosmos-429', parameters('namePrefix'))]",
+              "location": "global",
+              "properties": {
+                "description": "Cosmos DB requests are being throttled with HTTP 429 responses.",
+                "severity": 2,
+                "enabled": true,
+                "scopes": [
+                  "[parameters('cosmosAccountId')]"
+                ],
+                "evaluationFrequency": "PT5M",
+                "windowSize": "PT5M",
+                "criteria": {
+                  "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                  "allOf": [
+                    {
+                      "name": "cosmos429Requests",
+                      "criterionType": "StaticThresholdCriterion",
+                      "metricName": "TotalRequests",
+                      "dimensions": [
+                        {
+                          "name": "StatusCode",
+                          "operator": "Include",
+                          "values": [
+                            "429"
+                          ]
+                        }
+                      ],
+                      "operator": "GreaterThan",
+                      "threshold": "[parameters('cosmos429Threshold')]",
+                      "timeAggregation": "Count"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2021-08-01",
+              "name": "[format('alert-{0}-review-run-failures', parameters('namePrefix'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "description": "Worker review-run failure traces were emitted to Application Insights.",
+                "enabled": true,
+                "severity": 2,
+                "scopes": [
+                  "[parameters('applicationInsightsId')]"
+                ],
+                "evaluationFrequency": "PT5M",
+                "windowSize": "PT5M",
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "[variables('reviewRunFailureQuery')]",
+                      "metricMeasureColumn": "FailureCount",
+                      "dimensions": [],
+                      "operator": "GreaterThan",
+                      "threshold": 0,
+                      "timeAggregation": "Total",
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'cosmos')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'law')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('rgName'))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'servicebus')]"
       ]
     }
   ],

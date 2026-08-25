@@ -1,31 +1,58 @@
-"""T009: canonical event contract (FR-021/022)."""
+import pytest
 
-from harness.events import SCHEMA_VERSION, CanonicalEvent, EventType, export_json_schema
+from harness.events import (
+    EventEmitter,
+    EventType,
+    FindingCreatedData,
+    FindingResolvedData,
+    ReviewDegradedData,
+)
 
 
-class TestEnvelope:
-    def test_round_trip(self):
-        ev = CanonicalEvent(
-            id="evt-1",
-            event_type=EventType.PULL_REQUEST_CHANGED,
-            source="controlplane.webhooks",
-            subject="repos/org/repo/pulls/12",
-            data={"head_sha": "abc"},
-        )
-        parsed = CanonicalEvent.model_validate_json(ev.model_dump_json())
-        assert parsed == ev
-        assert parsed.schema_version == SCHEMA_VERSION
+@pytest.mark.asyncio
+async def test_finding_created_payload_matches_model_shape() -> None:
+    captured = []
+    emitter = EventEmitter(lambda event: captured.append(event))
 
-    def test_all_ten_event_types_defined(self):
-        required = {
-            "PullRequestChanged", "CommitCreated", "BuildCompleted", "TestCompleted",
-            "DeploymentCompleted", "FindingCreated", "FindingResolved",
-            "RuntimeSignalObserved", "IncidentOpened", "SpecificationChanged",
-        }
-        assert {e.value for e in EventType} == required
+    payload = FindingCreatedData(
+        findingId="f1",
+        changeId="c1",
+        repoId="org/repo",
+        dedupKey="v1:x",
+        status="confirmed",
+    )
+    event = await emitter.finding_created(source="test", subject="repos/org/repo/findings/f1", payload=payload)
 
-    def test_json_schema_export(self):
-        schema = export_json_schema()
-        assert "properties" in schema
-        description = str(schema["description"])
-        assert description.startswith("Canonical engineering event envelope v1")
+    assert event.event_type == EventType.FINDING_CREATED
+    assert captured[0].data == payload.model_dump(mode="json", by_alias=True)
+
+
+@pytest.mark.asyncio
+async def test_review_degraded_payload_matches_model_shape() -> None:
+    captured = []
+    emitter = EventEmitter(lambda event: captured.append(event))
+
+    payload = ReviewDegradedData(runId="r1", changeId="c1", headSha="abc", reasons=["budget"])
+    event = await emitter.review_degraded(source="test", subject="runs/r1", payload=payload)
+
+    assert event.event_type == EventType.REVIEW_DEGRADED
+    assert captured[0].data == payload.model_dump(mode="json", by_alias=True)
+
+
+@pytest.mark.asyncio
+async def test_finding_resolved_payload_matches_model_shape() -> None:
+    captured = []
+    emitter = EventEmitter(lambda event: captured.append(event))
+
+    payload = FindingResolvedData(
+        findingId="f1",
+        changeId="c1",
+        repoId="org/repo",
+        dedupKey="v1:x",
+        previousStatus="confirmed",
+        resolution="stale",
+    )
+    event = await emitter.finding_resolved(source="test", subject="repos/org/repo/findings/f1", payload=payload)
+
+    assert event.event_type == EventType.FINDING_RESOLVED
+    assert captured[0].data == payload.model_dump(mode="json", by_alias=True)

@@ -13,6 +13,8 @@ param foundryEndpoint string
 param foundryDeployment string
 param foundryProjectEndpoint string
 @secure()
+param applicationInsightsConnectionString string
+@secure()
 param foundryApiKey string = 'PLACEHOLDER'
 
 // Worker runs as a Container App scaled by Service Bus queue length (KEDA).
@@ -33,6 +35,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
       secrets: [
         { name: 'foundry-api-key', value: foundryApiKey }
         { name: 'sb-listen-conn', value: serviceBusListenerConnectionString }
+        { name: 'appinsights-connection-string', value: applicationInsightsConnectionString }
       ]
     }
     template: {
@@ -49,6 +52,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'FOUNDRY_PROJECT_ENDPOINT', value: foundryProjectEndpoint }
             { name: 'HARNESS_FOUNDRY_API_KEY', secretRef: 'foundry-api-key' }
             { name: 'HARNESS_FOUNDRY_DEPLOYMENT', value: foundryDeployment }
+            { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', secretRef: 'appinsights-connection-string' }
           ]
         }
       ]
@@ -77,4 +81,3 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
 }
 
 output fqdn string = ''
-

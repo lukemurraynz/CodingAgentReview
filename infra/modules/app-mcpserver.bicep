@@ -9,6 +9,8 @@ param foundryEndpoint string
 param foundryDeployment string
 param foundryProjectEndpoint string
 @secure()
+param applicationInsightsConnectionString string
+@secure()
 param foundryApiKey string = 'PLACEHOLDER'
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
@@ -22,6 +24,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
       activeRevisionsMode: 'Single'
       secrets: [
         { name: 'foundry-api-key', value: foundryApiKey }
+        { name: 'appinsights-connection-string', value: applicationInsightsConnectionString }
       ]
     registries: [
       { server: acrLoginServer, identity: identityId }
@@ -46,6 +49,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'FOUNDRY_PROJECT_ENDPOINT', value: foundryProjectEndpoint }
             { name: 'HARNESS_FOUNDRY_API_KEY', secretRef: 'foundry-api-key' }
             { name: 'HARNESS_FOUNDRY_DEPLOYMENT', value: foundryDeployment }
+            { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', secretRef: 'appinsights-connection-string' }
           ]
         }
       ]
@@ -55,4 +59,3 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
 }
 
 output fqdn string = app.properties.configuration.ingress.fqdn
-

@@ -2,9 +2,7 @@
 import asyncio
 import json
 import os
-import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src")) if False else None
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
@@ -19,12 +17,19 @@ async def go() -> None:
         async with ClientSession(r, w) as s:
             await s.initialize()
             res = await s.call_tool("review_validate_change", {"diff": diff})
-            d = json.loads(res.content[0].text)
+            first = res.content[0]
+            raw = getattr(first, "text", None)
+            if raw is None:
+                raise TypeError(f"expected text content, got {type(first).__name__}")
+            d = json.loads(raw)
             print("findingCount:", d["findingCount"], "| blocking:", d["blocking"])
             for f in d["findings"]:
                 if "title" in f:
                     sev = str(f.get("severity", "?")).upper()
-                    print(f"  [{sev:7}] {f.get('lens','?'):20} {f.get('path','?')}:{f.get('line','?')}  {f['title'][:80]}")
+                    print(
+                        f"  [{sev:7}] {f.get('lens','?'):20} {f.get('path','?')}:{f.get('line','?')}  "
+                        + f["title"][:80]
+                    )
 
 
 if __name__ == "__main__":

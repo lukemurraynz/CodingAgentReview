@@ -1,17 +1,20 @@
 """Gate-zero baseline (SC-004): run corpus through Foundry lens prompt, score.
 
-Usage: uv run python scripts/run_baseline.py
+Usage: uv run python scripts/run_baseline.py [--gate]
+  --gate  exit non-zero when results violate SC-004 thresholds (CI regression gate).
 Requires: az login (Entra), Foundry deployed (infra/modules/foundry.bicep).
 """
 
+import argparse
 import asyncio
+import json
 import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from eval.score import load_cases, score_review, summarize  # noqa: E402
+from eval.score import dump_scores, load_cases, sc004_gate_failures, score_review, summarize  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 ENDPOINT = os.environ.get(
@@ -49,6 +52,10 @@ async def review(code: str, client) -> str:
 
 
 async def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--gate", action="store_true", help="exit non-zero on SC-004 violations")
+    parser.add_argument("--scores-out", type=Path, help="optional path to persist per-case score records as JSON")
+    args = parser.parse_args()
     from azure.ai.inference.aio import ChatCompletionsClient
     from azure.identity.aio import DefaultAzureCredential
 
@@ -67,10 +74,19 @@ async def main() -> None:
     await client.close()
 
     summary = summarize(scores)
+    if args.scores_out is not None:
+        args.scores_out.write_text(json.dumps(dump_scores(scores), indent=2), encoding="utf8")
     md = "# Benchmark Baseline (SC-004 gate-zero)\n\n```\n" + summary.to_markdown() + "\n```\n"
     md += f"\nEndpoint: {ENDPOINT} | Model: {DEPLOYMENT}\n"
     (ROOT / "docs" / "benchmark-baseline.md").write_text(md, encoding="utf8")
     print("\n" + summary.to_markdown())
+
+    if args.gate:
+        failures = sc004_gate_failures(summary)
+        if failures:
+            print("\nSC-004 GATE FAILED:\n- " + "\n- ".join(failures))
+            sys.exit(1)
+        print("\nSC-004 gate passed.")
 
 
 if __name__ == "__main__":

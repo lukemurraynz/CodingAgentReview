@@ -43,6 +43,16 @@ def transition(
     waiver: Waiver | None = None,
     reopened_from: str | None = None,
 ) -> Finding:
+    return apply(finding, to_status, waiver=waiver, reopened_from=reopened_from)
+
+
+def apply(
+    finding: Finding,
+    to_status: str,
+    *,
+    waiver: Waiver | None = None,
+    reopened_from: str | None = None,
+) -> Finding:
     """Return a new validated Finding moved to ``to_status``.
 
     Re-validation through ``model_validate(model_dump())`` is deliberate:
@@ -53,13 +63,23 @@ def transition(
 
     data = finding.model_dump()
     data["status"] = to_status
+    existing_waiver = finding.waiver.model_dump() if finding.waiver is not None else None
     if to_status == "waived":
         if waiver is None and finding.waiver is None:
             raise LifecycleError("transition to 'waived' requires a waiver record")
+        if finding.waiver is not None and waiver is not None and waiver != finding.waiver:
+            raise LifecycleError("waiver record is immutable once written")
         if waiver is not None:
             data["waiver"] = waiver.model_dump()
+        else:
+            data["waiver"] = existing_waiver
     else:
-        data["waiver"] = None
+        if waiver is not None:
+            if finding.waiver is None:
+                raise LifecycleError("waiver record can only be created when transitioning to 'waived'")
+            if waiver != finding.waiver:
+                raise LifecycleError("waiver record is immutable once written")
+        data["waiver"] = existing_waiver
     if to_status == "reopened":
         origin = reopened_from or finding.reopened_from or finding.id
         if not origin:

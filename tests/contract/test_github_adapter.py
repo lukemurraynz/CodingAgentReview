@@ -7,7 +7,8 @@ import json
 import httpx
 import pytest
 
-from harness.models import Change, ChangeType, GitProvider
+from harness.models import Change, ChangeType, GitProvider, RiskLevel, RunStatus
+from providers.base import AnnotationReport, GateVerdict, ProviderHttpError
 from providers.github import GitHubAdapter
 
 SECRET = "test-secret"
@@ -111,3 +112,203 @@ class TestDiffFetchUrl:
         assert diff.startswith("diff --git")
         assert captured["url"].endswith("/repos/org/repo/pulls/12")
         assert captured["accept"] == "application/vnd.github.v3.diff"
+
+    async def test_commit_diff_url(self, monkeypatch):
+        monkeypatch.delenv("HARNESS_GITHUB_TOKEN", raising=False)
+        captured: dict[str, str] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["url"] = str(request.url)
+            return httpx.Response(200, text="diff --git a/x b/x")
+
+        transport = httpx.MockTransport(handler)
+        orig_init = httpx.AsyncClient.__init__
+
+        def patched(self, *a, **k):
+            k["transport"] = transport
+            orig_init(self, *a, **k)
+
+        monkeypatch.setattr(httpx.AsyncClient, "__init__", patched)
+        change = Change(
+            id="org/repo@abc",
+            provider=GitProvider.GITHUB,
+            repo_id="org/repo",
+            change_type=ChangeType.COMMIT,
+            head_sha="abc123",
+        )
+        await ADAPTER.fetch_diff(change)
+        assert captured["url"].endswith("/repos/org/repo/commits/abc123")
+
+    async def test_http_failure_becomes_typed_exception(self, monkeypatch):
+        monkeypatch.delenv("HARNESS_GITHUB_TOKEN", raising=False)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(502, request=request, text="boom")
+
+        transport = httpx.MockTransport(handler)
+        orig_init = httpx.AsyncClient.__init__
+
+        def patched(self, *a, **k):
+            k["transport"] = transport
+            orig_init(self, *a, **k)
+
+        monkeypatch.setattr(httpx.AsyncClient, "__init__", patched)
+        change = Change(
+            id="org/repo@abc",
+            provider=GitProvider.GITHUB,
+            repo_id="org/repo",
+            change_type=ChangeType.COMMIT,
+            head_sha="abc123",
+        )
+        with pytest.raises(ProviderHttpError, match="github:fetch_diff"):
+            await ADAPTER.fetch_diff(change)
+
+
+class TestAnnotationPosting:
+    async def test_post_annotations_payload_shape(self, monkeypatch):
+        monkeypatch.delenv("HARNESS_GITHUB_TOKEN", raising=False)
+        calls: list[tuple[str, str, str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append((str(request.method), str(request.url), request.content.decode()))
+            return httpx.Response(201, request=request, json={"id": 1})
+
+        transport = httpx.MockTransport(handler)
+        orig_init = httpx.AsyncClient.__init__
+
+        def patched(self, *a, **k):
+            k["transport"] = transport
+            orig_init(self, *a, **k)
+
+        monkeypatch.setattr(httpx.AsyncClient, "__init__", patched)
+        change = Change(
+            id="org/repo#12@a",
+            provider=GitProvider.GITHUB,
+            repo_id="org/repo",
+            change_type=ChangeType.PULL_REQUEST,
+            head_sha="a",
+            base_sha="b",
+            pr_number=12,
+        )
+        finding = {
+            "id": "f1",
+            "change_id": "c1",
+            "repo_id": "org/repo",
+            "category": "security",
+            "severity": "high",
+            "title": "bad auth",
+            "detail": "detail",
+            "evidence": [{"path": "src/a.py", "line_start": 4}],
+            "dedup_key": "d1",
+        }
+        report = AnnotationReport(
+            gate=GateVerdict(
+                status="block",
+                blocking_findings=1,
+                risk_floor=RiskLevel.HIGH,
+                risk_level=RiskLevel.HIGH,
+                reason="1 blocking finding(s)",
+            ),
+            run_status=RunStatus.DEGRADED,
+            coverage="partial_explicit",
+            lens_coverage="lenses: 1 declared, 1 reported, 0 unavailable",
+            not_flagged=("Does not validate runtime config.",),
+            degraded_reasons=("budget_exhausted",),
+        )
+        from harness.models import Finding
+
+        await ADAPTER.post_annotations(change, [Finding.model_validate(finding)], report)
+        method, url, body = calls[0]
+        assert method == "POST"
+        assert url.endswith("/repos/org/repo/pulls/12/comments")
+        assert '"line":4' in body
+        assert "Gate verdict" in body
+
+    async def test_post_annotations_failure_is_typed(self, monkeypatch):
+        monkeypatch.delenv("HARNESS_GITHUB_TOKEN", raising=False)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(500, request=request, text="nope")
+
+        transport = httpx.MockTransport(handler)
+        orig_init = httpx.AsyncClient.__init__
+
+        def patched(self, *a, **k):
+            k["transport"] = transport
+            orig_init(self, *a, **k)
+
+        monkeypatch.setattr(httpx.AsyncClient, "__init__", patched)
+        change = Change(
+            id="org/repo#12@a",
+            provider=GitProvider.GITHUB,
+            repo_id="org/repo",
+            change_type=ChangeType.PULL_REQUEST,
+            head_sha="a",
+            base_sha="b",
+            pr_number=12,
+        )
+        finding = {
+            "id": "f1",
+            "change_id": "c1",
+            "repo_id": "org/repo",
+            "category": "security",
+            "severity": "high",
+            "title": "bad auth",
+            "detail": "detail",
+            "evidence": [{"path": "src/a.py", "line_start": 4}],
+            "dedup_key": "d1",
+        }
+        from harness.models import Finding
+
+        with pytest.raises(ProviderHttpError, match="github:post_annotations"):
+            await ADAPTER.post_annotations(change, [Finding.model_validate(finding)], None)
+
+    async def test_upsert_summary_comment_edits_existing_marker_comment(self, monkeypatch):
+        monkeypatch.delenv("HARNESS_GITHUB_TOKEN", raising=False)
+        calls: list[tuple[str, str, str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append((request.method, str(request.url), request.content.decode()))
+            if request.method == "GET":
+                return httpx.Response(
+                    200,
+                    request=request,
+                    json=[{"id": 99, "body": "<!-- harness-review-summary -->\nold"}],
+                )
+            return httpx.Response(200, request=request, json={"id": 99})
+
+        transport = httpx.MockTransport(handler)
+        orig_init = httpx.AsyncClient.__init__
+
+        def patched(self, *a, **k):
+            k["transport"] = transport
+            orig_init(self, *a, **k)
+
+        monkeypatch.setattr(httpx.AsyncClient, "__init__", patched)
+        change = Change(
+            id="org/repo#12@a",
+            provider=GitProvider.GITHUB,
+            repo_id="org/repo",
+            change_type=ChangeType.PULL_REQUEST,
+            head_sha="a",
+            base_sha="b",
+            pr_number=12,
+        )
+        report = AnnotationReport(
+            gate=GateVerdict(
+                status="degraded",
+                blocking_findings=0,
+                risk_floor=RiskLevel.MEDIUM,
+                risk_level=RiskLevel.MEDIUM,
+                reason="partial lens coverage",
+            ),
+            run_status=RunStatus.DEGRADED,
+            coverage="partial_explicit",
+            lens_coverage="lenses: 2 declared, 2 reported, 1 unavailable",
+            not_flagged=("Does not validate runtime config.",),
+        )
+        await ADAPTER.upsert_summary_comment(change, [], report)
+        assert calls[0][0] == "GET"
+        assert calls[1][0] == "PATCH"
+        assert calls[1][1].endswith("/repos/org/repo/issues/comments/99")
+        assert "harness-review-summary" in calls[1][2]

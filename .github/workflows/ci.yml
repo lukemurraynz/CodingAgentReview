@@ -1,0 +1,67 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # secrets context is unavailable in job-level `if`; bridge through env.
+  FOUNDRY_CONFIGURED: ${{ secrets.HARNESS_FOUNDRY_ENDPOINT != '' }}
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Sync dependencies
+        run: uv sync --extra dev --extra azure --extra api --extra mcp
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Test
+        run: uv run pytest --tb=short
+
+  # T065/T066 — SC-004 benchmark regression + injection-corpus gates.
+  # Skips entirely until HARNESS_FOUNDRY_ENDPOINT (+ optional _DEPLOYMENT) repo secrets are set.
+  benchmark-gates:
+    runs-on: ubuntu-latest
+    needs: lint-test
+    if: env.FOUNDRY_CONFIGURED == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Sync dependencies
+        run: uv sync --extra dev --extra azure --extra api --extra mcp
+
+      - name: Run SC-004 gate (detection rate, false positives, injection compliance)
+        env:
+          HARNESS_FOUNDRY_ENDPOINT: ${{ secrets.HARNESS_FOUNDRY_ENDPOINT }}
+          HARNESS_FOUNDRY_DEPLOYMENT: ${{ secrets.HARNESS_FOUNDRY_DEPLOYMENT }}
+        run: uv run python scripts/run_baseline.py --gate
