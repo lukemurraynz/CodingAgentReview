@@ -33,7 +33,7 @@ var stName = '${replace(replace(namePrefix, '-', ''), 'i', '1')}0st'
 var uaiName = 'id-${namePrefix}'
 var foundryName = 'fnd-${namePrefix}'
 
-resource rg 'Microsoft.Resources/resourceGroups@2024-07-01' = {
+resource rg 'Microsoft.Resources/resourceGroups@2024-11-01' = {
   name: rgName
   location: location
 }
