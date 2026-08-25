@@ -33,7 +33,7 @@ var cosmosName = 'cos-${replace(namePrefix, '-', '')}'
 var stName = '${replace(replace(namePrefix, '-', ''), 'i', '1')}0st'
 var uaiName = 'id-${namePrefix}'
 
-resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
+resource rg 'Microsoft.Resources/resourceGroups@2024-07-01' = {
   name: rgName
   location: location
 }
