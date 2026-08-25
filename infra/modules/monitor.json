@@ -1,0 +1,191 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.43.8.12551",
+      "templateHash": "8849500781278216279"
+    }
+  },
+  "parameters": {
+    "namePrefix": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "applicationInsightsId": {
+      "type": "string"
+    },
+    "serviceBusNamespaceId": {
+      "type": "string"
+    },
+    "serviceBusQueueName": {
+      "type": "string"
+    },
+    "cosmosAccountId": {
+      "type": "string"
+    },
+    "backlogThreshold": {
+      "type": "int",
+      "defaultValue": 25
+    },
+    "cosmos429Threshold": {
+      "type": "int",
+      "defaultValue": 100
+    }
+  },
+  "variables": {
+    "reviewRunFailureQuery": "union isfuzzy=true AppTraces\n| where Message has 'annotation posting failed' or (Message startswith 'lens ' and Message has 'failed')\n| summarize FailureCount = count() by bin(TimeGenerated, 5m)\n"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('alert-{0}-sb-deadletter', parameters('namePrefix'))]",
+      "location": "global",
+      "properties": {
+        "description": "Dead-lettered review requests detected on the review queue.",
+        "severity": 2,
+        "enabled": true,
+        "scopes": [
+          "[parameters('serviceBusNamespaceId')]"
+        ],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT5M",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "reviewQueueDeadletters",
+              "criterionType": "StaticThresholdCriterion",
+              "metricName": "DeadletteredMessages",
+              "dimensions": [
+                {
+                  "name": "EntityName",
+                  "operator": "Include",
+                  "values": [
+                    "[parameters('serviceBusQueueName')]"
+                  ]
+                }
+              ],
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "timeAggregation": "Maximum"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('alert-{0}-sb-backlog', parameters('namePrefix'))]",
+      "location": "global",
+      "properties": {
+        "description": "Active review queue backlog is above the configured threshold.",
+        "severity": 3,
+        "enabled": true,
+        "scopes": [
+          "[parameters('serviceBusNamespaceId')]"
+        ],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT5M",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "reviewQueueBacklog",
+              "criterionType": "StaticThresholdCriterion",
+              "metricName": "ActiveMessages",
+              "dimensions": [
+                {
+                  "name": "EntityName",
+                  "operator": "Include",
+                  "values": [
+                    "[parameters('serviceBusQueueName')]"
+                  ]
+                }
+              ],
+              "operator": "GreaterThan",
+              "threshold": "[parameters('backlogThreshold')]",
+              "timeAggregation": "Maximum"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('alert-{0}-cosmos-429', parameters('namePrefix'))]",
+      "location": "global",
+      "properties": {
+        "description": "Cosmos DB requests are being throttled with HTTP 429 responses.",
+        "severity": 2,
+        "enabled": true,
+        "scopes": [
+          "[parameters('cosmosAccountId')]"
+        ],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT5M",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "cosmos429Requests",
+              "criterionType": "StaticThresholdCriterion",
+              "metricName": "TotalRequests",
+              "dimensions": [
+                {
+                  "name": "StatusCode",
+                  "operator": "Include",
+                  "values": [
+                    "429"
+                  ]
+                }
+              ],
+              "operator": "GreaterThan",
+              "threshold": "[parameters('cosmos429Threshold')]",
+              "timeAggregation": "Count"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2021-08-01",
+      "name": "[format('alert-{0}-review-run-failures', parameters('namePrefix'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "description": "Worker review-run failure traces were emitted to Application Insights.",
+        "enabled": true,
+        "severity": 2,
+        "scopes": [
+          "[parameters('applicationInsightsId')]"
+        ],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT5M",
+        "criteria": {
+          "allOf": [
+            {
+              "query": "[variables('reviewRunFailureQuery')]",
+              "metricMeasureColumn": "FailureCount",
+              "dimensions": [],
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "timeAggregation": "Total",
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "autoMitigate": true
+      }
+    }
+  ]
+}

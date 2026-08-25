@@ -8,7 +8,7 @@ param backlogThreshold int = 25
 param cosmos429Threshold int = 100
 
 var reviewRunFailureQuery = '''
-AppTraces
+union isfuzzy=true AppTraces
 | where Message has 'annotation posting failed' or (Message startswith 'lens ' and Message has 'failed')
 | summarize FailureCount = count() by bin(TimeGenerated, 5m)
 '''

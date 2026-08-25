@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.43.8.12551",
-      "templateHash": "11515328227673904785"
+      "templateHash": "13169753652694541070"
     }
   },
   "parameters": {
@@ -752,7 +752,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "16458840687245147929"
+              "templateHash": "11063926677214336939"
             }
           },
           "parameters": {
@@ -804,7 +804,7 @@
             },
             {
               "type": "Microsoft.CognitiveServices/accounts/projects",
-              "apiVersion": "2025-04-01-preview",
+              "apiVersion": "2025-09-01",
               "name": "[format('{0}/{1}', parameters('name'), 'harness')]",
               "properties": {
                 "displayName": "Agentic Engineering Harness"
@@ -1557,7 +1557,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "5315245078442622172"
+              "templateHash": "8849500781278216279"
             }
           },
           "parameters": {
@@ -1589,7 +1589,7 @@
             }
           },
           "variables": {
-            "reviewRunFailureQuery": "AppTraces\n| where Message has 'annotation posting failed' or (Message startswith 'lens ' and Message has 'failed')\n| summarize FailureCount = count() by bin(TimeGenerated, 5m)\n"
+            "reviewRunFailureQuery": "union isfuzzy=true AppTraces\n| where Message has 'annotation posting failed' or (Message startswith 'lens ' and Message has 'failed')\n| summarize FailureCount = count() by bin(TimeGenerated, 5m)\n"
           },
           "resources": [
             {
