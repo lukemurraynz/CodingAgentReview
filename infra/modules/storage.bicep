@@ -25,7 +25,7 @@ resource evidenceContainer 'Microsoft.Storage/storageAccounts/blobServices/conta
   name: blobContainerName
 }
 
-resource evidenceLifecyclePolicy 'Microsoft.Storage/storageAccounts/managementPolicies@2025-01-01' = {
+resource evidenceLifecyclePolicy 'Microsoft.Storage/storageAccounts/managementPolicies@2025-06-01' = {
   parent: stg
   name: 'default'
   properties: {
