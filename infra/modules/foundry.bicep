@@ -61,7 +61,7 @@ output accountId string = account.id
 // Created out-of-band via `az cognitiveservices account project create` because
 // the ARM preflight races the account's allowProjectManagement/identity PUTs.
 // Referenced as existing so deployments don't re-create it.
-resource harnessProject 'Microsoft.CognitiveServices/accounts/projects@2025-09-01' existing = {
+resource harnessProject 'Microsoft.CognitiveServices/accounts/projects@2025-12-01' existing = {
   parent: account
   name: 'harness'
 }
