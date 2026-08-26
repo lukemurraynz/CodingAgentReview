@@ -13,7 +13,7 @@ resource projectUai 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31
 }
 
 // 2025-04-01-preview: required for allowProjectManagement (projects support).
-resource account 'Microsoft.CognitiveServices/accounts@2025-09-01' = {
+resource account 'Microsoft.CognitiveServices/accounts@2025-12-01' = {
   name: name
   location: location
   kind: 'AIServices'
