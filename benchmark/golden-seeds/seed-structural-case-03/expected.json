@@ -1,0 +1,7 @@
+[
+  {
+    "path": "structural/case-03/defect.py",
+    "title_regex": "(?i)fabricat|hardcoded success|status",
+    "severity": null
+  }
+]

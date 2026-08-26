@@ -1,6 +1,7 @@
 """Merge-gate verdict derivation."""
 
 from harness.models import Evidence, Finding, FindingCategory, ReviewRun, RiskLevel, RunStatus, Severity, Waiver
+from providers.formatting import build_comment_body
 from worker.gate import build_annotation_report, derive_gate_verdict
 
 
@@ -73,6 +74,7 @@ def test_annotation_report_carries_gate_and_degrade():
         scope_notes=(),
     )
     assert report.gate.status == "block"
+    assert report.auto_fix_available is True
     assert report.run_status == RunStatus.DEGRADED
     assert report.degraded_reasons == ("budget_exhausted",)
 
@@ -105,3 +107,40 @@ def test_risk_floor_wins_when_reported_risk_is_lower():
     verdict = derive_gate_verdict([], risk_floor=RiskLevel.HIGH, risk_level=RiskLevel.LOW)
     assert verdict.risk_floor == RiskLevel.HIGH
     assert verdict.risk_level == RiskLevel.HIGH
+
+
+def test_summary_comment_includes_auto_fix_offer_for_blocking_findings():
+    run = ReviewRun(id="r1", change_id="c1", head_sha="abc", status=RunStatus.COMPLETED)
+    report = build_annotation_report(
+        run,
+        [_finding(Severity.HIGH)],
+        risk_floor=RiskLevel.HIGH,
+        risk_level=RiskLevel.HIGH,
+        declared_lenses=("security",),
+        executed_lenses=("security",),
+        unavailable_lenses=(),
+        scope_notes=(),
+    )
+
+    body = build_comment_body([_finding(Severity.HIGH)], report)
+
+    assert "### Auto-fix available" in body
+    assert "invoke `fix.propose` via MCP" in body
+
+
+def test_summary_comment_omits_auto_fix_offer_without_blocking_findings():
+    run = ReviewRun(id="r1", change_id="c1", head_sha="abc", status=RunStatus.COMPLETED)
+    report = build_annotation_report(
+        run,
+        [_finding(Severity.MEDIUM)],
+        risk_floor=RiskLevel.MEDIUM,
+        risk_level=RiskLevel.MEDIUM,
+        declared_lenses=("security",),
+        executed_lenses=("security",),
+        unavailable_lenses=(),
+        scope_notes=(),
+    )
+
+    body = build_comment_body([_finding(Severity.MEDIUM)], report)
+
+    assert "### Auto-fix available" not in body

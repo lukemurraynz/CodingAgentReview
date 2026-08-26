@@ -1,0 +1,10 @@
+diff --git a/security/case-05/defect.py b/security/case-05/defect.py
+new file mode 100644
+--- /dev/null
++++ b/security/case-05/defect.py
+@@ -0,0 +1,5 @@
++from pathlib import Path
++
++
++def read_doc(base: Path, filename: str) -> str:
++    return (base / filename).read_text()

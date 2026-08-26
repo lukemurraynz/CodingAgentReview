@@ -35,9 +35,7 @@ class _SecondOpinionResult:
 def mark_second_opinion_candidate(finding: Finding, lens_name: str) -> Finding:
     """Copy a finding and remember which LLM lens can re-review it."""
 
-    copied = finding.model_copy(deep=True)
-    object.__setattr__(copied, "_second_opinion_lens", lens_name)
-    return copied
+    return finding.model_copy(deep=True, update={"second_opinion_lens": lens_name})
 
 
 async def apply_second_opinions(
@@ -102,7 +100,7 @@ async def apply_second_opinions(
 
 
 def _needs_second_opinion(finding: Finding) -> bool:
-    lens_name = getattr(finding, "_second_opinion_lens", None)
+    lens_name = finding.second_opinion_lens
     return (
         isinstance(lens_name, str)
         and effective_severity(finding) in _BLOCKING_SEVERITIES

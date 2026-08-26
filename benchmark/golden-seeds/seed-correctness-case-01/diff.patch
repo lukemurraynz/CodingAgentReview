@@ -1,0 +1,10 @@
+diff --git a/correctness/case-01/defect.py b/correctness/case-01/defect.py
+new file mode 100644
+--- /dev/null
++++ b/correctness/case-01/defect.py
+@@ -0,0 +1,5 @@
++def total(items):
++    s = 0
++    for i in range(len(items) - 1):
++        s += items[i]
++    return s

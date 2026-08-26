@@ -1,0 +1,7 @@
+[
+  {
+    "path": "correctness/case-04/defect.py",
+    "title_regex": "KeyError|except.*pass|swallow",
+    "severity": null
+  }
+]

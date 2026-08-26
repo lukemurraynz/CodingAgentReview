@@ -1,0 +1,7 @@
+[
+  {
+    "path": "production_validation/case-03/defect.py",
+    "title_regex": "(?i)telemetry|observable|fallback.*metric",
+    "severity": null
+  }
+]

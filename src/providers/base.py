@@ -31,6 +31,7 @@ class AnnotationReport:
     gate: GateVerdict
     run_status: RunStatus
     coverage: str
+    auto_fix_available: bool = False
     lens_coverage: str = ""
     workitem_completeness: str = ""
     not_flagged: tuple[str, ...] = ()

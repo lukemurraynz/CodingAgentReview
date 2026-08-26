@@ -1,0 +1,10 @@
+diff --git a/security/case-03/defect.py b/security/case-03/defect.py
+new file mode 100644
+--- /dev/null
++++ b/security/case-03/defect.py
+@@ -0,0 +1,5 @@
++import yaml
++
++
++def parse_config(text):
++    return yaml.load(text)

@@ -47,6 +47,8 @@ class _RecordingContainer:
     def __init__(self, *, items: list[dict[str, object]] | None = None) -> None:
         self.items = list(items or [])
         self.upserts: list[dict[str, object]] = []
+        self.created: list[dict[str, object]] = []
+        self.deleted: list[tuple[str, str]] = []
         self.read_all_partition_keys: list[str] = []
         self.query_partition_keys: list[str] = []
 
@@ -68,8 +70,23 @@ class _RecordingContainer:
     async def upsert_item(self, item: dict[str, object]) -> None:
         self.upserts.append(item)
 
+    async def create_item(self, item: dict[str, object]) -> None:
+        for current in [*self.items, *self.upserts, *self.created]:
+            if current.get("id") == item.get("id") and current.get("pk") == item.get("pk"):
+                raise CosmosResourceExistsError("exists")
+        self.created.append(item)
+
+    async def delete_item(self, *, item: str, partition_key: str) -> None:
+        self.deleted.append((item, partition_key))
+        for collection in (self.items, self.upserts, self.created):
+            for index, current in enumerate(collection):
+                if current.get("id") == item and current.get("pk") == partition_key:
+                    collection.pop(index)
+                    return
+        raise CosmosResourceNotFoundError("missing")
+
     async def read_item(self, *, item: str, partition_key: str) -> dict[str, object]:
-        for current in self.upserts:
+        for current in [*self.upserts, *self.created, *self.items]:
             current_partition = current.get("repo_id", current.get("change_id", current.get("pk")))
             if current["id"] == item and current_partition == partition_key:
                 return current
@@ -80,15 +97,29 @@ class CosmosResourceNotFoundError(Exception):
     pass
 
 
+class CosmosResourceExistsError(Exception):
+    pass
+
+
 class _SessionRepository(HarnessRepository):
-    def __init__(self, findings: _RecordingContainer | None = None, runs: _RecordingContainer | None = None) -> None:
+    def __init__(
+        self,
+        findings: _RecordingContainer | None = None,
+        runs: _RecordingContainer | None = None,
+        dedups: _RecordingContainer | None = None,
+    ) -> None:
         super().__init__(database="harness")
         self.findings = findings or _RecordingContainer()
         self.runs = runs or _RecordingContainer()
+        self.dedups = dedups or _RecordingContainer()
 
     @asynccontextmanager
     async def _session(self) -> AsyncIterator[tuple[_RecordingContainer, _RecordingContainer]]:
         yield self.findings, self.runs
+
+    @asynccontextmanager
+    async def _dedup_session(self) -> AsyncIterator[_RecordingContainer]:
+        yield self.dedups
 
 
 class _ScopedStore:
@@ -241,3 +272,62 @@ async def test_redaction_end_to_end_across_persistence_events_and_comment_body()
         assert secret not in comment_body
     assert "[REDACTED:" in persisted_payload
     assert "[REDACTED:" in comment_body
+
+
+@pytest.mark.asyncio
+async def test_claim_delivery_creates_unique_record() -> None:
+    repository = _SessionRepository()
+
+    claimed = await repository.claim_delivery(("org/repo", "7", "headsha"), ttl_seconds=10, now=100.0)
+
+    assert claimed is True
+    assert repository.dedups.created[0]["id"] == "7:headsha"
+    assert repository.dedups.created[0]["pk"] == "org/repo"
+    assert repository.dedups.created[0]["ttl"] == 10
+
+
+@pytest.mark.asyncio
+async def test_claim_delivery_rejects_live_duplicate() -> None:
+    repository = _SessionRepository(
+        dedups=_RecordingContainer(
+            items=[
+                {
+                    "id": "7:headsha",
+                    "pk": "org/repo",
+                    "expires_at": "1970-01-01T00:03:20+00:00",
+                }
+            ]
+        )
+    )
+
+    claimed = await repository.claim_delivery(("org/repo", "7", "headsha"), ttl_seconds=10, now=100.0)
+
+    assert claimed is False
+
+
+@pytest.mark.asyncio
+async def test_claim_delivery_replaces_expired_record() -> None:
+    dedups = _RecordingContainer(
+        items=[
+            {
+                "id": "7:headsha",
+                "pk": "org/repo",
+                "expires_at": "1970-01-01T00:01:35+00:00",
+            }
+        ]
+    )
+    repository = _SessionRepository(dedups=dedups)
+
+    claimed = await repository.claim_delivery(("org/repo", "7", "headsha"), ttl_seconds=10, now=100.0)
+
+    assert claimed is True
+    assert dedups.deleted == [("7:headsha", "org/repo")]
+
+
+@pytest.mark.asyncio
+async def test_release_delivery_claim_is_idempotent() -> None:
+    repository = _SessionRepository()
+
+    await repository.release_delivery_claim(("org/repo", "7", "headsha"))
+
+    assert repository.dedups.deleted == [("7:headsha", "org/repo")]

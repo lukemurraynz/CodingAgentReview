@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-import time
+from collections.abc import Callable
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
@@ -15,7 +15,7 @@ from harness.authz import RepoAccessDenied
 from harness.events import CommitCreatedData, EventEmitter, PullRequestChangedData, ReviewReceivedData
 from harness.models import ChangeType
 from harness.queue import ReviewQueuePublisher
-from harness.repository import HarnessRepository
+from harness.repository import DeliveryDedupStore, HarnessRepository
 from harness.telemetry import configure_telemetry
 from providers.azuredevops import AzureDevOpsAdapter
 from providers.github import GitHubAdapter
@@ -27,8 +27,6 @@ ADAPTERS = {
 
 _publisher = ReviewQueuePublisher()
 _DEDUP_TTL_SECONDS_DEFAULT = 600.0
-_dedup_registry: dict[tuple[str, str, str], float] = {}
-_monotonic = time.monotonic
 
 
 async def _send_event(event):  # type: ignore[no-untyped-def]
@@ -60,36 +58,23 @@ def _dedup_key(
     return repo_id, pr_or_commit, head_sha
 
 
-def _claim_delivery(key: tuple[str, str, str], *, now: float | None = None) -> bool:
-    """Claim a webhook delivery slot until TTL expiry.
-
-    This is an in-memory PRPilot-style guard for concurrent redeliveries before
-    enqueue. The control plane runs webhook handling on a single asyncio event
-    loop, and this check/set is synchronous with no awaits between lookup and
-    write, so tasks cannot interleave here. Production upgrade path: replace
-    this registry with a persistent uniqueness constraint (for example Cosmos DB
-    unique key / conditional create) once repository ownership allows it.
-    """
-
-    now_value = _monotonic() if now is None else now
-    ttl_seconds = _dedup_ttl_seconds()
-    expired = [entry_key for entry_key, expires_at in _dedup_registry.items() if expires_at <= now_value]
-    for entry_key in expired:
-        _dedup_registry.pop(entry_key, None)
-    if key in _dedup_registry:
-        return False
-    _dedup_registry[key] = now_value + ttl_seconds
-    return True
+def _as_delivery_dedup_store(candidate: object) -> DeliveryDedupStore | None:
+    if isinstance(candidate, DeliveryDedupStore):
+        return candidate
+    return None
 
 
-def _release_delivery_claim(key: tuple[str, str, str]) -> None:
-    _dedup_registry.pop(key, None)
-
-
-def create_app(*, repository: FindingAdminStore | None = None) -> FastAPI:
+def create_app(
+    *,
+    repository: FindingAdminStore | None = None,
+    delivery_store: DeliveryDedupStore | None = None,
+    dedup_now: Callable[[], float] | None = None,
+) -> FastAPI:
     configure_telemetry()
+    admin_repository = repository or HarnessRepository()
+    dedup_repository: DeliveryDedupStore | None = delivery_store or _as_delivery_dedup_store(admin_repository)
     app = FastAPI(title="Agentic Engineering Harness — Control Plane", version="0.1.0")
-    app.include_router(create_admin_router(repository or HarnessRepository()))
+    app.include_router(create_admin_router(admin_repository))
 
     @app.exception_handler(PermissionError)
     async def _permission(request: Request, exc: PermissionError) -> JSONResponse:
@@ -120,8 +105,19 @@ def create_app(*, repository: FindingAdminStore | None = None) -> FastAPI:
             response.status_code = 204
             return response
 
+        if dedup_repository is None:
+            return JSONResponse(
+                status_code=503,
+                content={"error": "delivery dedup store unavailable"},
+                headers={"Retry-After": "30"},
+            )
+
         dedup_key = _dedup_key(provider, change.id, change.repo_id, change.pr_number, change.head_sha)
-        if not _claim_delivery(dedup_key):
+        if not await dedup_repository.claim_delivery(
+            dedup_key,
+            ttl_seconds=_dedup_ttl_seconds(),
+            now=None if dedup_now is None else dedup_now(),
+        ):
             return JSONResponse(
                 status_code=202,
                 content={"accepted": True, "changeId": change.id, "deduplicated": True},
@@ -170,7 +166,7 @@ def create_app(*, repository: FindingAdminStore | None = None) -> FastAPI:
                 ),
             )
         except RuntimeError as exc:
-            _release_delivery_claim(dedup_key)
+            await dedup_repository.release_delivery_claim(dedup_key)
             return JSONResponse(
                 status_code=503,
                 content={"error": f"review queue unavailable: {exc}"},

@@ -205,7 +205,13 @@ def test_tools_list_discovery(client: TestClient, signing_material: SigningMater
     response = client.post("/mcp", json=_rpc("tools/list"), headers=_auth_headers(token))
     assert response.status_code == 200
     names = [tool["name"] for tool in response.json()["result"]["tools"]]
-    assert names == ["review.validate_change", "get_active_findings", "get_risk_explanation", "get_related_changes"]
+    assert names == [
+        "review.validate_change",
+        "fix.propose",
+        "get_active_findings",
+        "get_risk_explanation",
+        "get_related_changes",
+    ]
 
 
 def test_initialize_happy_path(client: TestClient, signing_material: SigningMaterial) -> None:

@@ -53,7 +53,21 @@ class EntraTokenConfig:
 
     @property
     def issuer(self) -> str:
+        """Primary (v2.0) issuer; see `issuers` for both accepted forms."""
         return f"https://login.microsoftonline.com/{self.tenant_id}/v2.0"
+
+    @property
+    def issuers(self) -> tuple[str, ...]:
+        """Both tenant-pinned issuer forms Entra mints.
+
+        v2.0 tokens carry login.microsoftonline.com/{tid}/v2.0; client-credential
+        tokens from apps without an explicit accessTokenAcceptedVersion carry the
+        v1 form sts.windows.net/{tid}/. Both are pinned to the tenant.
+        """
+        return (
+            f"https://login.microsoftonline.com/{self.tenant_id}/v2.0",
+            f"https://sts.windows.net/{self.tenant_id}/",
+        )
 
     @property
     def jwks_url(self) -> str:
@@ -93,12 +107,21 @@ def principal_from_token_claims(claims: dict[str, object]) -> Principal:
 
 
 def repo_ids_from_claims(claims: dict[str, object]) -> frozenset[str]:
-    """Extract explicit repo grants from validated token claims."""
+    """Extract explicit repo grants from validated token claims.
 
+    Two claim shapes are honoured:
+    - ``repos``: a custom list claim of repo ids (e.g. from a claims provider).
+    - ``roles``: standard Entra app-role values, where each role value IS a
+      repo id (admins assign app roles to grant per-repo MCP access).
+    """
+    granted: set[str] = set()
     repos_claim = claims.get("repos")
-    if not isinstance(repos_claim, list):
-        return frozenset()
-    return frozenset(str(repo_id) for repo_id in repos_claim)
+    if isinstance(repos_claim, list):
+        granted.update(str(repo_id) for repo_id in repos_claim)
+    roles_claim = claims.get("roles")
+    if isinstance(roles_claim, list):
+        granted.update(str(role) for role in roles_claim)
+    return frozenset(granted)
 
 
 def _signing_jwk_from_jwks(jwks: dict[str, object], token: str) -> PyJWK:
@@ -136,7 +159,7 @@ class EntraTokenVerifier:
                 key=key,
                 algorithms=["RS256"],
                 audience=list(self._config.audiences),
-                issuer=self._config.issuer,
+                issuer=list(self._config.issuers),
                 options={"require": ["exp", "nbf", "iss", "aud"]},
             )
         except InvalidTokenError as exc:

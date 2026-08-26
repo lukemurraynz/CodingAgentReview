@@ -92,8 +92,8 @@ async def _load_runs_for_change(repository: RunRepository, change_id: str) -> li
 
 
 def _run_metadata(run: ReviewRun, findings: list[Finding]) -> dict[str, object]:
-    metadata = getattr(run, "_review_metadata", {})
-    prompt_version = metadata.get("prompt_version", PROMPT_VERSION) if isinstance(metadata, dict) else PROMPT_VERSION
+    metadata = run.review_metadata
+    prompt_version = PROMPT_VERSION if metadata is None or metadata.prompt_version is None else metadata.prompt_version
     return {
         "prompt_version": prompt_version,
         "lens_versions": _lens_versions(run),
@@ -108,39 +108,28 @@ def _run_metadata(run: ReviewRun, findings: list[Finding]) -> dict[str, object]:
 
 
 def _lens_versions(run: ReviewRun) -> dict[str, str]:
-    metadata = getattr(run, "_review_metadata", {})
-    lens_versions = metadata.get("lens_versions", {}) if isinstance(metadata, dict) else {}
-    return dict(lens_versions) if isinstance(lens_versions, dict) else {}
+    return {} if run.review_metadata is None else dict(run.review_metadata.lens_versions)
 
 
 def _declared_lenses(run: ReviewRun) -> list[str]:
-    metadata = getattr(run, "_review_metadata", {})
-    declared = metadata.get("declared_lenses", ()) if isinstance(metadata, dict) else ()
-    return list(declared) if isinstance(declared, (list, tuple)) else []
+    return [] if run.review_metadata is None else list(run.review_metadata.declared_lenses)
 
 
 def _executed_lenses(run: ReviewRun) -> list[str]:
-    metadata = getattr(run, "_review_metadata", {})
-    executed = metadata.get("executed_lenses", ()) if isinstance(metadata, dict) else ()
-    if isinstance(executed, (list, tuple)):
-        return list(executed)
+    if run.review_metadata is not None:
+        return list(run.review_metadata.executed_lenses)
     return [result.lens for result in run.lens_results]
 
 
 def _reported_lenses(run: ReviewRun) -> list[str]:
-    metadata = getattr(run, "_review_metadata", {})
-    executed = metadata.get("executed_lenses", ()) if isinstance(metadata, dict) else ()
-    unavailable = metadata.get("unavailable_lenses", ()) if isinstance(metadata, dict) else ()
-    if isinstance(executed, (list, tuple)) and isinstance(unavailable, (list, tuple)):
-        return list(dict.fromkeys([*executed, *unavailable]))
+    if run.review_metadata is not None:
+        return list(dict.fromkeys([*run.review_metadata.executed_lenses, *run.review_metadata.unavailable_lenses]))
     return [result.lens for result in run.lens_results]
 
 
 def _unavailable_lenses(run: ReviewRun) -> list[str]:
-    metadata = getattr(run, "_review_metadata", {})
-    unavailable = metadata.get("unavailable_lenses", ()) if isinstance(metadata, dict) else ()
-    if isinstance(unavailable, (list, tuple)):
-        return list(unavailable)
+    if run.review_metadata is not None:
+        return list(run.review_metadata.unavailable_lenses)
     return [result.lens for result in run.lens_results if result.status.name == "SKIPPED_POLICY"]
 
 

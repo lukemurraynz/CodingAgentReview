@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import inspect
 import os
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
 from graph import (
     ApplicableRule,
+    SymbolIndex,
     build_lens_briefs,
     discover_specification_artifacts,
     load_rules,
@@ -18,7 +19,7 @@ from graph import (
 )
 from lenses.llm import LensUnavailable
 
-ReviewModelClient = Callable[..., object]
+ReviewModelClient = Callable[..., Awaitable[dict[str, object]]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,11 +61,13 @@ def coerce_applicable_rules(raw: object) -> tuple[ApplicableRule, ...] | None:
 def compose_rule_aware_client(
     base_client: object | None,
     lens_briefs: dict[str, str],
+    trusted_user_context: str = "",
 ) -> ReviewModelClient:
     """Build a model callable that appends repo-local rule briefs to prompts."""
 
     async def _call(*, system_prompt: str, user_prompt: str, deployment: str, lens: str) -> dict[str, object]:
-        scoped_system, scoped_user = append_rule_briefs(system_prompt, user_prompt, lens, lens_briefs)
+        scoped_user = prepend_trusted_context(user_prompt, trusted_user_context)
+        scoped_system, scoped_user = append_rule_briefs(system_prompt, scoped_user, lens, lens_briefs)
         response = await invoke_model(
             base_client,
             system_prompt=scoped_system,
@@ -139,6 +142,81 @@ def append_rule_briefs(system_prompt: str, user_prompt: str, lens: str, lens_bri
         return system_prompt, user_prompt
     addition = f"\n\nRepository-specific review rules:\n{combined}"
     return system_prompt + addition, user_prompt + addition
+
+
+def prepend_trusted_context(user_prompt: str, trusted_user_context: str) -> str:
+    """Prepend trusted repository context ahead of the untrusted diff prompt."""
+
+    if not trusted_user_context:
+        return user_prompt
+    return f"{trusted_user_context}\n\n{user_prompt}"
+
+
+def build_trusted_symbol_index_context(symbol_index: SymbolIndex | None, *, max_entries: int = 10) -> str:
+    """Return a compact, bounded trusted repository summary for LLM prompts."""
+
+    if symbol_index is None:
+        return ""
+
+    entries = _trusted_symbol_index_entries(symbol_index)
+    if not entries:
+        return ""
+
+    bullet_lines = "\n".join(f"- {entry}" for entry in entries[:max_entries])
+    return (
+        "TRUSTED REPOSITORY CONTEXT (generated from repository source, distinct from the untrusted diff below):\n"
+        f"{bullet_lines}"
+    )
+
+
+def _trusted_symbol_index_entries(symbol_index: SymbolIndex) -> tuple[str, ...]:
+    registration_entries = [
+        (
+            site[0],
+            site[1],
+            name,
+            symbol_index.invocation_count(name),
+            f"'{name}' registered {site[0]}:{site[1]} — "
+            f"{_invocation_summary(symbol_index, name)} "
+            "repo-wide",
+        )
+        for name, sites in symbol_index.registrations.items()
+        for site in sites
+    ]
+    if registration_entries:
+        return tuple(
+            entry[-1]
+            for entry in sorted(registration_entries, key=lambda item: (item[3], item[0], item[1], item[2]))
+        )
+
+    definition_entries = [
+        (
+            site[0],
+            site[1],
+            name,
+            site[2],
+            f"{site[2]} '{name}' defined {site[0]}:{site[1]} — "
+            f"{_invocation_summary(symbol_index, name)} "
+            "repo-wide",
+        )
+        for name, sites in symbol_index.definitions.items()
+        for site in sites
+    ]
+    if definition_entries:
+        return tuple(
+            entry[-1] for entry in sorted(definition_entries, key=lambda item: (item[0], item[1], item[2], item[3]))
+        )
+
+    return tuple(
+        f"route {route[1]} {route[2]} at {route[0]}"
+        for route in symbol_index.routes
+    )
+
+
+def _invocation_summary(symbol_index: SymbolIndex, name: str) -> str:
+    count = symbol_index.invocation_count(name)
+    suffix = "" if count == 1 else "s"
+    return f"{count} invocation{suffix}"
 
 
 def _invoke_client(model_client: object, **kwargs: object) -> object:

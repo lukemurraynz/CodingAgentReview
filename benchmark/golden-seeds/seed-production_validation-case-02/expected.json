@@ -1,0 +1,7 @@
+[
+  {
+    "path": "production_validation/case-02/defect.py",
+    "title_regex": "(?i)retry.*success|swallow|final failure",
+    "severity": null
+  }
+]

@@ -1,0 +1,13 @@
+diff --git a/clean/clean-03/code.py b/clean/clean-03/code.py
+new file mode 100644
+--- /dev/null
++++ b/clean/clean-03/code.py
+@@ -0,0 +1,8 @@
++def fetch(client, url, attempts=3):
++    last: Exception | None = None
++    for _ in range(attempts):
++        try:
++            return client.get(url)
++        except ConnectionError as exc:
++            last = exc
++    raise RuntimeError(f'fetch failed after {attempts} attempts') from last

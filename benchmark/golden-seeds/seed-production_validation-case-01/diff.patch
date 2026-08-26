@@ -1,0 +1,11 @@
+diff --git a/production_validation/case-01/defect.py b/production_validation/case-01/defect.py
+new file mode 100644
+--- /dev/null
++++ b/production_validation/case-01/defect.py
+@@ -0,0 +1,6 @@
++from di import container
++from workers.legacy import LegacyExporter
++
++
++def configure(container=container):
++    container.add_singleton(LegacyExporter, LegacyExporter)

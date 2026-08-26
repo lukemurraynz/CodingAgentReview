@@ -7,11 +7,13 @@ from harness.models import (
     Change,
     ChangeType,
     Evidence,
+    ExploitabilityMetadata,
     Finding,
     FindingCategory,
     GitProvider,
     LensResult,
     LensStatus,
+    ReviewMetadata,
     ReviewRun,
     RiskAssessment,
     RiskLevel,
@@ -82,6 +84,22 @@ class TestReviewRunDegraded:
         with pytest.raises(ValidationError):
             ReviewRun(id="r1", change_id="c1", head_sha="a", degraded_reasons=["budget_exhausted"])
 
+    def test_review_metadata_round_trips(self):
+        run = ReviewRun(
+            id="r1",
+            change_id="c1",
+            head_sha="a",
+            review_metadata=ReviewMetadata(
+                declared_lenses=("security",),
+                executed_lenses=("security",),
+                unavailable_lenses=(),
+                lens_versions={"security": "1"},
+                prompt_version="v1",
+            ),
+        )
+        assert run.review_metadata is not None
+        assert run.review_metadata.declared_lenses == ("security",)
+
 
 class TestRiskAssessment:
     def test_level_equals_max_signal(self):
@@ -141,3 +159,38 @@ class TestFindingWaiverConsistency:
                 status="confirmed",
                 waiver=Waiver(approver="x", rationale="y"),
             )
+
+    def test_metadata_fields_default_to_empty_values(self):
+        finding = Finding(
+            id="f1",
+            change_id="c1",
+            repo_id="org/repo",
+            category=FindingCategory.STRUCTURAL,
+            severity=Severity.BLOCKER,
+            title="t",
+            evidence=[Evidence(path="a.py")],
+            dedup_key="v1:x",
+        )
+        assert finding.reported_by == ()
+        assert finding.not_flagged == ()
+        assert finding.exploitability is None
+        assert finding.second_opinion_lens is None
+
+    def test_exploitability_metadata_round_trips(self):
+        finding = Finding(
+            id="f1",
+            change_id="c1",
+            repo_id="org/repo",
+            category=FindingCategory.SECURITY,
+            severity=Severity.HIGH,
+            title="t",
+            evidence=[Evidence(path="a.py")],
+            dedup_key="v1:x",
+            exploitability=ExploitabilityMetadata(
+                level="reachable",
+                reasons=("r1",),
+                confidence=0.5,
+            ),
+        )
+        assert finding.exploitability is not None
+        assert finding.exploitability.level == "reachable"

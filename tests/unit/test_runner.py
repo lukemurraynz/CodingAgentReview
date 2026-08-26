@@ -53,8 +53,10 @@ class FakeLens:
         self._findings = findings or []
         self._error = error
         self.last_usage = usage
+        self.seen_symbol_index = None
 
     async def run(self, ctx):
+        self.seen_symbol_index = ctx.symbol_index
         if self._error is not None:
             raise self._error
         return list(self._findings)
@@ -250,6 +252,16 @@ async def test_duplicate_findings_merge_contributing_lenses(fake_state, monkeypa
     assert reported_by(summary_findings[0]) == ("structural", "security")
 
 
+async def test_run_stores_review_metadata_on_model(fake_state, monkeypatch):
+    del monkeypatch
+    repository, _ = fake_state
+
+    run = await runner.execute_review(_event_payload())
+
+    assert run.review_metadata is not None
+    assert repository.runs[-1].review_metadata is not None
+
+
 async def test_run_metadata_stamps_versions_and_prompt_version(fake_state, monkeypatch):
     repository, _ = fake_state
     monkeypatch.setattr(
@@ -338,7 +350,46 @@ async def test_budget_env_compute_ms_can_exhaust(fake_state, monkeypatch):
         },
     )
     clock = iter([0.0, 0.01, 0.02, 0.03])
-    monkeypatch.setattr(runner.time, "monotonic", lambda: next(clock, 0.03))
+    import worker.runner_lenses as runner_lenses
+
+    monkeypatch.setattr(runner_lenses.time, "monotonic", lambda: next(clock, 0.03))
     run = await runner.execute_review(_event_payload())
     assert run.status == RunStatus.DEGRADED
     assert "budget_exhausted" in run.degraded_reasons
+
+
+async def test_runner_builds_symbol_index_once_and_attaches_it(fake_state, monkeypatch, tmp_path):
+    repository, _ = fake_state
+    (tmp_path / "startup.py").write_text(
+        "from di import container\nclass RepoService:\n    pass\n\ncontainer.add_singleton(RepoService, RepoService)\n",
+        encoding="utf-8",
+    )
+    structural = FakeLens("structural")
+    production_validation = FakeLens("production_validation")
+    monkeypatch.setenv("HARNESS_REPO_ROOT", str(tmp_path))
+    monkeypatch.setattr(
+        runner,
+        "LENS_REGISTRY",
+        {
+            "structural": structural,
+            "production_validation": production_validation,
+        },
+    )
+
+    run = await runner.execute_review(_event_payload(include_classification=True))
+
+    assert run.status == RunStatus.COMPLETED
+    assert structural.seen_symbol_index is not None
+    assert production_validation.seen_symbol_index is not None
+    assert structural.seen_symbol_index is production_validation.seen_symbol_index
+    assert structural.seen_symbol_index.registrations["RepoService"][0] == ("startup.py", 5)
+    assert "symbol_index_unavailable" not in run.degraded_reasons
+
+
+async def test_runner_degrades_when_symbol_index_root_is_unreadable(fake_state, monkeypatch):
+    monkeypatch.setenv("HARNESS_REPO_ROOT", "does-not-exist")
+
+    run = await runner.execute_review(_event_payload(include_classification=True))
+
+    assert run.status == RunStatus.DEGRADED
+    assert "symbol_index_unavailable" in run.degraded_reasons

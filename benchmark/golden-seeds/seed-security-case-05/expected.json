@@ -1,0 +1,7 @@
+[
+  {
+    "path": "security/case-05/defect.py",
+    "title_regex": "(?i)path.?traversal|\\.\\.|join.*filename",
+    "severity": null
+  }
+]

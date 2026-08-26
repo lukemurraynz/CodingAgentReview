@@ -17,6 +17,19 @@ param retentionDays int = 365
 @secure()
 param githubWebhookSecret string
 
+@secure()
+param HARNESS_MCP_ENTRA_TENANT_ID string
+@secure()
+param HARNESS_MCP_ENTRA_AUDIENCE string
+@secure()
+param HARNESS_MCP_ENTRA_CLIENT_ID string = ''
+@secure()
+param HARNESS_ADMIN_TOKEN string
+@secure()
+param HARNESS_ENTRA_TENANT_ID string
+@secure()
+param HARNESS_ENTRA_AUDIENCE string
+
 
 @secure()
 @allowed(['', 'PLACEHOLDER'])
@@ -123,6 +136,7 @@ module controlplane './modules/app-controlplane.bicep' = {
     location: location
     environmentId: cae.outputs.environmentId
     identityId: uai.outputs.identityId
+    azureClientId: uai.outputs.clientId
     acrLoginServer: acr.outputs.loginServer
     image: controlplaneImage
     serviceBusNamespaceName: sb.outputs.namespaceName
@@ -133,6 +147,9 @@ module controlplane './modules/app-controlplane.bicep' = {
     foundryProjectEndpoint: foundry.outputs.projectEndpoint
     foundryApiKey: foundry.outputs.apiKey
     applicationInsightsConnectionString: law.outputs.applicationInsightsConnectionString
+    HARNESS_ADMIN_TOKEN: HARNESS_ADMIN_TOKEN
+    HARNESS_ENTRA_TENANT_ID: HARNESS_ENTRA_TENANT_ID
+    HARNESS_ENTRA_AUDIENCE: HARNESS_ENTRA_AUDIENCE
   }
 }
 
@@ -144,6 +161,7 @@ module mcpserver './modules/app-mcpserver.bicep' = {
     location: location
     environmentId: cae.outputs.environmentId
     identityId: uai.outputs.identityId
+    azureClientId: uai.outputs.clientId
     acrLoginServer: acr.outputs.loginServer
     image: mcpserverImage
     cosmosEndpoint: cosmos.outputs.documentEndpoint
@@ -152,6 +170,9 @@ module mcpserver './modules/app-mcpserver.bicep' = {
     foundryProjectEndpoint: foundry.outputs.projectEndpoint
     foundryApiKey: foundry.outputs.apiKey
     applicationInsightsConnectionString: law.outputs.applicationInsightsConnectionString
+    HARNESS_MCP_ENTRA_TENANT_ID: HARNESS_MCP_ENTRA_TENANT_ID
+    HARNESS_MCP_ENTRA_AUDIENCE: HARNESS_MCP_ENTRA_AUDIENCE
+    HARNESS_MCP_ENTRA_CLIENT_ID: HARNESS_MCP_ENTRA_CLIENT_ID
   }
 }
 
@@ -163,6 +184,7 @@ module worker './modules/app-worker.bicep' = {
     location: location
     environmentId: cae.outputs.environmentId
     identityId: uai.outputs.identityId
+    azureClientId: uai.outputs.clientId
     acrLoginServer: acr.outputs.loginServer
     image: workerImage
     serviceBusNamespaceName: sb.outputs.namespaceName
@@ -189,6 +211,20 @@ module monitor './modules/monitor.bicep' = {
     cosmosAccountId: cosmos.outputs.accountId
   }
 }
+
+module dashboard './modules/dashboard.bicep' = {
+  name: 'dashboard'
+  scope: rg
+  params: {
+    namePrefix: namePrefix
+    location: location
+    applicationInsightsId: law.outputs.applicationInsightsId
+    serviceBusNamespaceId: sb.outputs.namespaceId
+    serviceBusQueueName: sb.outputs.queueName
+    cosmosAccountId: cosmos.outputs.accountId
+  }
+}
+
 
 output resourceGroupName string = rg.name
 output controlplaneFqdn string = controlplane.outputs.fqdn

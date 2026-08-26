@@ -1,0 +1,8 @@
+diff --git a/correctness/case-02/defect.py b/correctness/case-02/defect.py
+new file mode 100644
+--- /dev/null
++++ b/correctness/case-02/defect.py
+@@ -0,0 +1,3 @@
++def add_tag(tag, tags=[]):
++    tags.append(tag)
++    return tags

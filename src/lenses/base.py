@@ -9,9 +9,14 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Sequence
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from harness.models import Finding
+
+if TYPE_CHECKING:
+    from graph.symbols import SymbolIndex
+else:
+    SymbolIndex = Any
 
 
 @dataclass(frozen=True)
@@ -34,6 +39,7 @@ class LensContext:
     # Deterministic lenses never touch it. None ⇒ LLM lenses must raise.
     model_client: object | None = None
     model_deployment: str = ""
+    symbol_index: SymbolIndex | None = None
 
 
 @runtime_checkable

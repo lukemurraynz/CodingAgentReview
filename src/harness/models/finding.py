@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field, model_validator
 
+from harness.exploitability import ExploitabilityLevel, ExploitabilityVerdict
+
 from .enums import FindingCategory, Severity
 
 
@@ -31,6 +33,21 @@ class Waiver(BaseModel):
     decided_at: datetime = Field(default_factory=_utcnow)
 
 
+class ExploitabilityMetadata(BaseModel):
+    """Deterministic exploitability verdict persisted on security findings."""
+
+    level: ExploitabilityLevel
+    reasons: tuple[str, ...] = Field(default_factory=tuple)
+    confidence: float
+
+    @classmethod
+    def from_verdict(cls, verdict: ExploitabilityVerdict) -> "ExploitabilityMetadata":
+        return cls(level=verdict.level, reasons=verdict.reasons, confidence=verdict.confidence)
+
+    def to_verdict(self) -> ExploitabilityVerdict:
+        return ExploitabilityVerdict(level=self.level, reasons=self.reasons, confidence=self.confidence)
+
+
 class Finding(BaseModel):
     id: str = Field(min_length=1)
     change_id: str = Field(min_length=1)
@@ -44,6 +61,10 @@ class Finding(BaseModel):
     status: str = "candidate"  # constrained by harness.lifecycle; string to avoid circular import
     waiver: Waiver | None = None
     reopened_from: str | None = None
+    reported_by: tuple[str, ...] = Field(default_factory=tuple)
+    not_flagged: tuple[str, ...] = Field(default_factory=tuple)
+    exploitability: ExploitabilityMetadata | None = None
+    second_opinion_lens: str | None = None
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 

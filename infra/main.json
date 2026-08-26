@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.43.8.12551",
-      "templateHash": "13169753652694541070"
+      "templateHash": "18039119954440375465"
     }
   },
   "parameters": {
@@ -23,6 +23,25 @@
       "minValue": 30
     },
     "githubWebhookSecret": {
+      "type": "securestring"
+    },
+    "HARNESS_MCP_ENTRA_TENANT_ID": {
+      "type": "securestring"
+    },
+    "HARNESS_MCP_ENTRA_AUDIENCE": {
+      "type": "securestring"
+    },
+    "HARNESS_MCP_ENTRA_CLIENT_ID": {
+      "type": "securestring",
+      "defaultValue": ""
+    },
+    "HARNESS_ADMIN_TOKEN": {
+      "type": "securestring"
+    },
+    "HARNESS_ENTRA_TENANT_ID": {
+      "type": "securestring"
+    },
+    "HARNESS_ENTRA_AUDIENCE": {
       "type": "securestring"
     },
     "foundryApiKey": {
@@ -692,7 +711,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "749754565351220739"
+              "templateHash": "2381628853885860656"
             }
           },
           "parameters": {
@@ -719,6 +738,10 @@
             "identityId": {
               "type": "string",
               "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('name'))]"
+            },
+            "clientId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('name')), '2023-07-31-preview').clientId]"
             }
           }
         }
@@ -752,7 +775,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "11063926677214336939"
+              "templateHash": "12503371055488332760"
             }
           },
           "parameters": {
@@ -764,12 +787,19 @@
             }
           },
           "variables": {
-            "modelName": "model-router"
+            "modelName": "model-router",
+            "projectUaiName": "[format('{0}-proj-uai', parameters('name'))]"
           },
           "resources": [
             {
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2023-01-31",
+              "name": "[variables('projectUaiName')]",
+              "location": "[parameters('location')]"
+            },
+            {
               "type": "Microsoft.CognitiveServices/accounts",
-              "apiVersion": "2024-10-01",
+              "apiVersion": "2025-04-01-preview",
               "name": "[parameters('name')]",
               "location": "[parameters('location')]",
               "kind": "AIServices",
@@ -777,12 +807,19 @@
                 "name": "S0"
               },
               "identity": {
-                "type": "SystemAssigned"
+                "type": "SystemAssigned,UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('projectUaiName')))]": {}
+                }
               },
               "properties": {
                 "customSubDomainName": "[parameters('name')]",
-                "publicNetworkAccess": "Enabled"
-              }
+                "publicNetworkAccess": "Enabled",
+                "allowProjectManagement": true
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('projectUaiName'))]"
+              ]
             },
             {
               "type": "Microsoft.CognitiveServices/accounts/deployments",
@@ -797,17 +834,6 @@
                   "format": "OpenAI",
                   "name": "[variables('modelName')]"
                 }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
-              ]
-            },
-            {
-              "type": "Microsoft.CognitiveServices/accounts/projects",
-              "apiVersion": "2025-09-01",
-              "name": "[format('{0}/{1}', parameters('name'), 'harness')]",
-              "properties": {
-                "displayName": "Agentic Engineering Harness"
               },
               "dependsOn": [
                 "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
@@ -865,6 +891,9 @@
           "identityId": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'uai'), '2025-04-01').outputs.identityId.value]"
           },
+          "azureClientId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'uai'), '2025-04-01').outputs.clientId.value]"
+          },
           "acrLoginServer": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'acr'), '2025-04-01').outputs.loginServer.value]"
           },
@@ -894,6 +923,15 @@
           },
           "applicationInsightsConnectionString": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'law'), '2025-04-01').outputs.applicationInsightsConnectionString.value]"
+          },
+          "HARNESS_ADMIN_TOKEN": {
+            "value": "[parameters('HARNESS_ADMIN_TOKEN')]"
+          },
+          "HARNESS_ENTRA_TENANT_ID": {
+            "value": "[parameters('HARNESS_ENTRA_TENANT_ID')]"
+          },
+          "HARNESS_ENTRA_AUDIENCE": {
+            "value": "[parameters('HARNESS_ENTRA_AUDIENCE')]"
           }
         },
         "template": {
@@ -903,7 +941,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "7106958526319226885"
+              "templateHash": "4624702878555674403"
             }
           },
           "parameters": {
@@ -920,6 +958,9 @@
               "type": "string"
             },
             "identityId": {
+              "type": "string"
+            },
+            "azureClientId": {
               "type": "string"
             },
             "acrLoginServer": {
@@ -949,6 +990,18 @@
             "foundryApiKey": {
               "type": "securestring",
               "defaultValue": "PLACEHOLDER"
+            },
+            "HARNESS_ADMIN_TOKEN": {
+              "type": "securestring",
+              "defaultValue": ""
+            },
+            "HARNESS_ENTRA_TENANT_ID": {
+              "type": "securestring",
+              "defaultValue": ""
+            },
+            "HARNESS_ENTRA_AUDIENCE": {
+              "type": "securestring",
+              "defaultValue": ""
             }
           },
           "resources": [
@@ -976,20 +1029,7 @@
                       "identity": "[parameters('identityId')]"
                     }
                   ],
-                  "secrets": [
-                    {
-                      "name": "foundry-api-key",
-                      "value": "[parameters('foundryApiKey')]"
-                    },
-                    {
-                      "name": "github-webhook-secret",
-                      "value": "[parameters('githubWebhookSecret')]"
-                    },
-                    {
-                      "name": "appinsights-connection-string",
-                      "value": "[parameters('applicationInsightsConnectionString')]"
-                    }
-                  ],
+                  "secrets": "[flatten(createArray(createArray(createObject('name', 'foundry-api-key', 'value', parameters('foundryApiKey')), createObject('name', 'github-webhook-secret', 'value', parameters('githubWebhookSecret')), createObject('name', 'appinsights-connection-string', 'value', parameters('applicationInsightsConnectionString'))), if(not(equals(parameters('HARNESS_ADMIN_TOKEN'), '')), createArray(createObject('name', 'admin-token', 'value', parameters('HARNESS_ADMIN_TOKEN'))), createArray()), if(not(equals(parameters('HARNESS_ENTRA_TENANT_ID'), '')), createArray(createObject('name', 'entra-tenant', 'value', parameters('HARNESS_ENTRA_TENANT_ID'))), createArray()), if(not(equals(parameters('HARNESS_ENTRA_AUDIENCE'), '')), createArray(createObject('name', 'entra-audience', 'value', parameters('HARNESS_ENTRA_AUDIENCE'))), createArray())))]",
                   "ingress": {
                     "external": true,
                     "targetPort": 8000,
@@ -1005,40 +1045,7 @@
                         "cpu": "[json('0.5')]",
                         "memory": "1Gi"
                       },
-                      "env": [
-                        {
-                          "name": "HARNESS_SERVICEBUS_NS",
-                          "value": "[parameters('serviceBusNamespaceName')]"
-                        },
-                        {
-                          "name": "HARNESS_COSMOS_ENDPOINT",
-                          "value": "[parameters('cosmosEndpoint')]"
-                        },
-                        {
-                          "name": "HARNESS_GITHUB_WEBHOOK_SECRET",
-                          "secretRef": "github-webhook-secret"
-                        },
-                        {
-                          "name": "HARNESS_FOUNDRY_ENDPOINT",
-                          "value": "[parameters('foundryEndpoint')]"
-                        },
-                        {
-                          "name": "FOUNDRY_PROJECT_ENDPOINT",
-                          "value": "[parameters('foundryProjectEndpoint')]"
-                        },
-                        {
-                          "name": "HARNESS_FOUNDRY_API_KEY",
-                          "secretRef": "foundry-api-key"
-                        },
-                        {
-                          "name": "HARNESS_FOUNDRY_DEPLOYMENT",
-                          "value": "[parameters('foundryDeployment')]"
-                        },
-                        {
-                          "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
-                          "secretRef": "appinsights-connection-string"
-                        }
-                      ]
+                      "env": "[flatten(createArray(createArray(createObject('name', 'AZURE_CLIENT_ID', 'value', parameters('azureClientId'))), if(not(equals(parameters('HARNESS_ADMIN_TOKEN'), '')), createArray(createObject('name', 'HARNESS_ADMIN_TOKEN', 'secretRef', 'admin-token')), createArray()), if(not(equals(parameters('HARNESS_ENTRA_TENANT_ID'), '')), createArray(createObject('name', 'HARNESS_ENTRA_TENANT_ID', 'secretRef', 'entra-tenant')), createArray()), if(not(equals(parameters('HARNESS_ENTRA_AUDIENCE'), '')), createArray(createObject('name', 'HARNESS_ENTRA_AUDIENCE', 'secretRef', 'entra-audience')), createArray()), createArray(createObject('name', 'HARNESS_SERVICEBUS_NS', 'value', parameters('serviceBusNamespaceName')), createObject('name', 'HARNESS_COSMOS_ENDPOINT', 'value', parameters('cosmosEndpoint')), createObject('name', 'HARNESS_GITHUB_WEBHOOK_SECRET', 'secretRef', 'github-webhook-secret'), createObject('name', 'HARNESS_FOUNDRY_ENDPOINT', 'value', parameters('foundryEndpoint')), createObject('name', 'FOUNDRY_PROJECT_ENDPOINT', 'value', parameters('foundryProjectEndpoint')), createObject('name', 'HARNESS_FOUNDRY_API_KEY', 'secretRef', 'foundry-api-key'), createObject('name', 'HARNESS_FOUNDRY_DEPLOYMENT', 'value', parameters('foundryDeployment')), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'secretRef', 'appinsights-connection-string'))))]"
                     }
                   ],
                   "scale": {
@@ -1091,6 +1098,9 @@
           "identityId": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'uai'), '2025-04-01').outputs.identityId.value]"
           },
+          "azureClientId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'uai'), '2025-04-01').outputs.clientId.value]"
+          },
           "acrLoginServer": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'acr'), '2025-04-01').outputs.loginServer.value]"
           },
@@ -1114,6 +1124,15 @@
           },
           "applicationInsightsConnectionString": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'law'), '2025-04-01').outputs.applicationInsightsConnectionString.value]"
+          },
+          "HARNESS_MCP_ENTRA_TENANT_ID": {
+            "value": "[parameters('HARNESS_MCP_ENTRA_TENANT_ID')]"
+          },
+          "HARNESS_MCP_ENTRA_AUDIENCE": {
+            "value": "[parameters('HARNESS_MCP_ENTRA_AUDIENCE')]"
+          },
+          "HARNESS_MCP_ENTRA_CLIENT_ID": {
+            "value": "[parameters('HARNESS_MCP_ENTRA_CLIENT_ID')]"
           }
         },
         "template": {
@@ -1123,7 +1142,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "12807285933235229743"
+              "templateHash": "10885285933138217071"
             }
           },
           "parameters": {
@@ -1140,6 +1159,9 @@
               "type": "string"
             },
             "identityId": {
+              "type": "string"
+            },
+            "azureClientId": {
               "type": "string"
             },
             "acrLoginServer": {
@@ -1163,6 +1185,18 @@
             "foundryApiKey": {
               "type": "securestring",
               "defaultValue": "PLACEHOLDER"
+            },
+            "HARNESS_MCP_ENTRA_TENANT_ID": {
+              "type": "securestring",
+              "defaultValue": ""
+            },
+            "HARNESS_MCP_ENTRA_AUDIENCE": {
+              "type": "securestring",
+              "defaultValue": ""
+            },
+            "HARNESS_MCP_ENTRA_CLIENT_ID": {
+              "type": "securestring",
+              "defaultValue": ""
             }
           },
           "resources": [
@@ -1184,16 +1218,7 @@
                 "managedEnvironmentId": "[parameters('environmentId')]",
                 "configuration": {
                   "activeRevisionsMode": "Single",
-                  "secrets": [
-                    {
-                      "name": "foundry-api-key",
-                      "value": "[parameters('foundryApiKey')]"
-                    },
-                    {
-                      "name": "appinsights-connection-string",
-                      "value": "[parameters('applicationInsightsConnectionString')]"
-                    }
-                  ],
+                  "secrets": "[flatten(createArray(createArray(createObject('name', 'foundry-api-key', 'value', parameters('foundryApiKey')), createObject('name', 'appinsights-connection-string', 'value', parameters('applicationInsightsConnectionString'))), if(not(equals(parameters('HARNESS_MCP_ENTRA_TENANT_ID'), '')), createArray(createObject('name', 'mcp-entra-tenant', 'value', parameters('HARNESS_MCP_ENTRA_TENANT_ID'))), createArray()), if(not(equals(parameters('HARNESS_MCP_ENTRA_AUDIENCE'), '')), createArray(createObject('name', 'mcp-entra-audience', 'value', parameters('HARNESS_MCP_ENTRA_AUDIENCE'))), createArray()), if(not(equals(parameters('HARNESS_MCP_ENTRA_CLIENT_ID'), '')), createArray(createObject('name', 'mcp-entra-client-id', 'value', parameters('HARNESS_MCP_ENTRA_CLIENT_ID'))), createArray())))]",
                   "registries": [
                     {
                       "server": "[parameters('acrLoginServer')]",
@@ -1215,36 +1240,7 @@
                         "cpu": "[json('0.5')]",
                         "memory": "1Gi"
                       },
-                      "env": [
-                        {
-                          "name": "HARNESS_COSMOS_ENDPOINT",
-                          "value": "[parameters('cosmosEndpoint')]"
-                        },
-                        {
-                          "name": "HARNESS_MCP_TRANSPORT",
-                          "value": "streamable-http"
-                        },
-                        {
-                          "name": "HARNESS_FOUNDRY_ENDPOINT",
-                          "value": "[parameters('foundryEndpoint')]"
-                        },
-                        {
-                          "name": "FOUNDRY_PROJECT_ENDPOINT",
-                          "value": "[parameters('foundryProjectEndpoint')]"
-                        },
-                        {
-                          "name": "HARNESS_FOUNDRY_API_KEY",
-                          "secretRef": "foundry-api-key"
-                        },
-                        {
-                          "name": "HARNESS_FOUNDRY_DEPLOYMENT",
-                          "value": "[parameters('foundryDeployment')]"
-                        },
-                        {
-                          "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
-                          "secretRef": "appinsights-connection-string"
-                        }
-                      ]
+                      "env": "[flatten(createArray(createArray(createObject('name', 'HARNESS_COSMOS_ENDPOINT', 'value', parameters('cosmosEndpoint')), createObject('name', 'AZURE_CLIENT_ID', 'value', parameters('azureClientId')), createObject('name', 'HARNESS_MCP_TRANSPORT', 'value', 'streamable-http')), if(not(equals(parameters('HARNESS_MCP_ENTRA_TENANT_ID'), '')), createArray(createObject('name', 'HARNESS_MCP_ENTRA_TENANT_ID', 'secretRef', 'mcp-entra-tenant')), createArray()), if(not(equals(parameters('HARNESS_MCP_ENTRA_AUDIENCE'), '')), createArray(createObject('name', 'HARNESS_MCP_ENTRA_AUDIENCE', 'secretRef', 'mcp-entra-audience')), createArray()), if(not(equals(parameters('HARNESS_MCP_ENTRA_CLIENT_ID'), '')), createArray(createObject('name', 'HARNESS_MCP_ENTRA_CLIENT_ID', 'secretRef', 'mcp-entra-client-id')), createArray()), createArray(createObject('name', 'HARNESS_FOUNDRY_ENDPOINT', 'value', parameters('foundryEndpoint')), createObject('name', 'FOUNDRY_PROJECT_ENDPOINT', 'value', parameters('foundryProjectEndpoint')), createObject('name', 'HARNESS_FOUNDRY_API_KEY', 'secretRef', 'foundry-api-key'), createObject('name', 'HARNESS_FOUNDRY_DEPLOYMENT', 'value', parameters('foundryDeployment')), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'secretRef', 'appinsights-connection-string'))))]"
                     }
                   ],
                   "scale": {
@@ -1296,6 +1292,9 @@
           "identityId": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'uai'), '2025-04-01').outputs.identityId.value]"
           },
+          "azureClientId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'uai'), '2025-04-01').outputs.clientId.value]"
+          },
           "acrLoginServer": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'acr'), '2025-04-01').outputs.loginServer.value]"
           },
@@ -1337,7 +1336,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "7739366846725891931"
+              "templateHash": "7511986063201388527"
             }
           },
           "parameters": {
@@ -1354,6 +1353,9 @@
               "type": "string"
             },
             "identityId": {
+              "type": "string"
+            },
+            "azureClientId": {
               "type": "string"
             },
             "acrLoginServer": {
@@ -1441,6 +1443,10 @@
                         {
                           "name": "HARNESS_SERVICEBUS_LISTEN_CONN",
                           "secretRef": "sb-listen-conn"
+                        },
+                        {
+                          "name": "AZURE_CLIENT_ID",
+                          "value": "[parameters('azureClientId')]"
                         },
                         {
                           "name": "HARNESS_COSMOS_ENDPOINT",
@@ -1557,7 +1563,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "8849500781278216279"
+              "templateHash": "15963810315535041965"
             }
           },
           "parameters": {
@@ -1586,6 +1592,10 @@
             "cosmos429Threshold": {
               "type": "int",
               "defaultValue": 100
+            },
+            "enableReviewRunFailureAlert": {
+              "type": "bool",
+              "defaultValue": false
             }
           },
           "variables": {
@@ -1707,6 +1717,7 @@
               }
             },
             {
+              "condition": "[parameters('enableReviewRunFailureAlert')]",
               "type": "Microsoft.Insights/scheduledQueryRules",
               "apiVersion": "2021-08-01",
               "name": "[format('alert-{0}-review-run-failures', parameters('namePrefix'))]",
@@ -1740,6 +1751,306 @@
               }
             }
           ]
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'cosmos')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'law')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('rgName'))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'servicebus')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "dashboard",
+      "resourceGroup": "[variables('rgName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "namePrefix": {
+            "value": "[parameters('namePrefix')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "applicationInsightsId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'law'), '2025-04-01').outputs.applicationInsightsId.value]"
+          },
+          "serviceBusNamespaceId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'servicebus'), '2025-04-01').outputs.namespaceId.value]"
+          },
+          "serviceBusQueueName": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'servicebus'), '2025-04-01').outputs.queueName.value]"
+          },
+          "cosmosAccountId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', 'cosmos'), '2025-04-01').outputs.accountId.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.43.8.12551",
+              "templateHash": "8528331512265484002"
+            }
+          },
+          "parameters": {
+            "namePrefix": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "applicationInsightsId": {
+              "type": "string"
+            },
+            "serviceBusNamespaceId": {
+              "type": "string"
+            },
+            "serviceBusQueueName": {
+              "type": "string"
+            },
+            "cosmosAccountId": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "dashboardName": "[format('dash-{0}', parameters('namePrefix'))]",
+            "dashboardTitle": "Harness review operations",
+            "reviewRunFailureQuery": "union isfuzzy=true AppTraces\n| where Message has 'annotation posting failed' or (Message startswith 'lens ' and Message has 'failed')\n| summarize FailureCount = count() by bin(TimeGenerated, 5m)\n| render timechart\n",
+            "timeRange": "PT1H"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Portal/dashboards",
+              "apiVersion": "2020-09-01-preview",
+              "name": "[variables('dashboardName')]",
+              "location": "[parameters('location')]",
+              "tags": {
+                "hidden-title": "[variables('dashboardTitle')]"
+              },
+              "properties": {
+                "lenses": [
+                  {
+                    "order": 0,
+                    "parts": [
+                      {
+                        "position": {
+                          "x": 0,
+                          "y": 0,
+                          "rowSpan": 4,
+                          "colSpan": 6
+                        },
+                        "metadata": {
+                          "inputs": [
+                            {
+                              "name": "Scope",
+                              "value": {
+                                "resourceIds": [
+                                  "[parameters('applicationInsightsId')]"
+                                ]
+                              }
+                            },
+                            {
+                              "name": "PartId",
+                              "value": "[guid(parameters('namePrefix'), 'review-run-failures')]"
+                            },
+                            {
+                              "name": "Version",
+                              "value": "2.0"
+                            },
+                            {
+                              "name": "TimeRange",
+                              "value": "[variables('timeRange')]"
+                            },
+                            {
+                              "name": "Query",
+                              "value": "[variables('reviewRunFailureQuery')]"
+                            },
+                            {
+                              "name": "ControlType",
+                              "value": "FrameControlChart"
+                            },
+                            {
+                              "name": "SpecificChart",
+                              "value": "Line"
+                            },
+                            {
+                              "name": "IsQueryContainTimeRange",
+                              "value": false,
+                              "isOptional": true
+                            }
+                          ],
+                          "type": "Extension/Microsoft_OperationsManagementSuite_Workspace/PartType/LogsDashboardPart",
+                          "settings": {
+                            "content": {
+                              "PartTitle": "Failed review runs",
+                              "IsQueryContainTimeRange": false
+                            }
+                          },
+                          "partHeader": {
+                            "title": "Failed review runs",
+                            "subtitle": "Application Insights traces"
+                          }
+                        }
+                      },
+                      {
+                        "position": {
+                          "x": 6,
+                          "y": 0,
+                          "rowSpan": 4,
+                          "colSpan": 6
+                        },
+                        "metadata": {
+                          "inputs": [
+                            {
+                              "name": "queryInputs",
+                              "value": {
+                                "timespan": {
+                                  "duration": "[variables('timeRange')]"
+                                },
+                                "id": "[parameters('serviceBusNamespaceId')]",
+                                "chartType": 0,
+                                "metrics": [
+                                  {
+                                    "name": "DeadletteredMessages",
+                                    "resourceId": "[parameters('serviceBusNamespaceId')]",
+                                    "dimensions": [
+                                      {
+                                        "name": "EntityName",
+                                        "operator": "Include",
+                                        "values": [
+                                          "[parameters('serviceBusQueueName')]"
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            }
+                          ],
+                          "type": "Extension/Microsoft_Azure_Monitoring/PartType/MetricsChartPart",
+                          "partHeader": {
+                            "title": "Dead-letter messages",
+                            "subtitle": "Service Bus review queue"
+                          }
+                        }
+                      },
+                      {
+                        "position": {
+                          "x": 0,
+                          "y": 4,
+                          "rowSpan": 4,
+                          "colSpan": 6
+                        },
+                        "metadata": {
+                          "inputs": [
+                            {
+                              "name": "queryInputs",
+                              "value": {
+                                "timespan": {
+                                  "duration": "[variables('timeRange')]"
+                                },
+                                "id": "[parameters('cosmosAccountId')]",
+                                "chartType": 0,
+                                "metrics": [
+                                  {
+                                    "name": "TotalRequests",
+                                    "resourceId": "[parameters('cosmosAccountId')]",
+                                    "dimensions": [
+                                      {
+                                        "name": "StatusCode",
+                                        "operator": "Include",
+                                        "values": [
+                                          "429"
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            }
+                          ],
+                          "type": "Extension/Microsoft_Azure_Monitoring/PartType/MetricsChartPart",
+                          "partHeader": {
+                            "title": "Cosmos 429 responses",
+                            "subtitle": "Throttled request count"
+                          }
+                        }
+                      },
+                      {
+                        "position": {
+                          "x": 6,
+                          "y": 4,
+                          "rowSpan": 4,
+                          "colSpan": 6
+                        },
+                        "metadata": {
+                          "inputs": [
+                            {
+                              "name": "queryInputs",
+                              "value": {
+                                "timespan": {
+                                  "duration": "[variables('timeRange')]"
+                                },
+                                "id": "[parameters('serviceBusNamespaceId')]",
+                                "chartType": 0,
+                                "metrics": [
+                                  {
+                                    "name": "ActiveMessages",
+                                    "resourceId": "[parameters('serviceBusNamespaceId')]",
+                                    "dimensions": [
+                                      {
+                                        "name": "EntityName",
+                                        "operator": "Include",
+                                        "values": [
+                                          "[parameters('serviceBusQueueName')]"
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            }
+                          ],
+                          "type": "Extension/Microsoft_Azure_Monitoring/PartType/MetricsChartPart",
+                          "partHeader": {
+                            "title": "Active queue backlog",
+                            "subtitle": "Service Bus review queue"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "metadata": {
+                  "model": {
+                    "timeRange": {
+                      "type": "MsPortalFx.Composition.Configuration.ValueTypes.TimeRange",
+                      "value": {
+                        "relative": {
+                          "duration": 1,
+                          "timeUnit": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "dashboardId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Portal/dashboards', variables('dashboardName'))]"
+            }
+          }
         }
       },
       "dependsOn": [

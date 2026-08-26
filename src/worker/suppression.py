@@ -59,15 +59,15 @@ def attach_scope(finding: Finding, not_flagged: tuple[str, ...]) -> Finding:
 
 
 def reported_by(finding: Finding) -> tuple[str, ...]:
-    """Read merged lens names without changing the public Finding model."""
-    value = getattr(finding, "_reported_by", ())
-    return value if isinstance(value, tuple) else ()
+    """Read merged lens names from the Finding model."""
+
+    return finding.reported_by
 
 
 def not_flagged(finding: Finding) -> tuple[str, ...]:
-    """Read scope-honesty notes without changing the public Finding model."""
-    value = getattr(finding, "_not_flagged", ())
-    return value if isinstance(value, tuple) else ()
+    """Read scope-honesty notes from the Finding model."""
+
+    return finding.not_flagged
 
 
 def _normalize_title(title: str) -> str:
@@ -81,17 +81,12 @@ def _copy_with_metadata(
     reported_by: tuple[str, ...] | None = None,
     not_flagged: tuple[str, ...] | None = None,
 ) -> Finding:
-    copied = finding.model_copy(deep=True)
-    if reported_by is not None:
-        object.__setattr__(copied, "_reported_by", reported_by)
-    elif hasattr(finding, "_reported_by"):
-        object.__setattr__(copied, "_reported_by", object.__getattribute__(finding, "_reported_by"))
-    if not_flagged is not None:
-        object.__setattr__(copied, "_not_flagged", not_flagged)
-    elif hasattr(finding, "_not_flagged"):
-        object.__setattr__(copied, "_not_flagged", object.__getattribute__(finding, "_not_flagged"))
-    if hasattr(finding, "_exploitability"):
-        object.__setattr__(copied, "_exploitability", object.__getattribute__(finding, "_exploitability"))
-    if hasattr(finding, "_second_opinion_lens"):
-        object.__setattr__(copied, "_second_opinion_lens", object.__getattribute__(finding, "_second_opinion_lens"))
-    return copied
+    return finding.model_copy(
+        deep=True,
+        update={
+            "reported_by": finding.reported_by if reported_by is None else reported_by,
+            "not_flagged": finding.not_flagged if not_flagged is None else not_flagged,
+            "exploitability": finding.exploitability,
+            "second_opinion_lens": finding.second_opinion_lens,
+        },
+    )

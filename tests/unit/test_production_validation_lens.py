@@ -2,6 +2,7 @@
 
 import pytest
 
+from graph import build_symbol_index
 from lenses import LENS_REGISTRY, LensContext, LensFile, ProductionValidationLens
 
 
@@ -59,6 +60,22 @@ async def send(client, items):
     return "ok"
 '''
 
+FAILURE_RESPONSE = '''\
+import urllib.error
+import urllib.request
+
+def send_request(request):
+    try:
+        with urllib.request.urlopen(request) as response:
+            return {"success": 200 <= response.status < 300}
+    except urllib.error.HTTPError as error:
+        return {
+            "statusCode": error.code,
+            "statusDescription": error.reason,
+            "success": False,
+        }
+'''
+
 
 LEGACY_FILE = "class LegacyExporter:\n    def export(self): ...\n"
 USED_FILE = (
@@ -96,5 +113,64 @@ class TestRules:
             f.evidence[0].rule_id in ("prodval.swallowed-final-failure",) for f in findings
         )
 
+    async def test_explicit_failure_response_not_flagged_as_swallowed_success(self):
+        ctx = _ctx(("http/client.py", FAILURE_RESPONSE))
+        findings = await ProductionValidationLens().run(ctx)
+        assert not any(
+            f.evidence[0].rule_id == "prodval.swallowed-final-failure" for f in findings
+        )
+
     async def test_registered_in_registry(self):
         assert isinstance(LENS_REGISTRY["production_validation"], ProductionValidationLens)
+
+    async def test_repo_wide_symbol_index_keeps_unreferenced_registration_flagged(self, tmp_path):
+        startup = tmp_path / "startup.py"
+        startup.write_text(REGISTERED_NOT_INVOKED, encoding="utf-8")
+        (tmp_path / "workers").mkdir(parents=True)
+        (tmp_path / "workers" / "legacy.py").write_text(LEGACY_FILE, encoding="utf-8")
+
+        ctx = LensContext(
+            change_id="c1",
+            repo_id="org/repo",
+            files=[LensFile(path="startup.py", content=REGISTERED_NOT_INVOKED)],
+            symbol_index=build_symbol_index(tmp_path),
+        )
+
+        findings = await ProductionValidationLens().run(ctx)
+
+        assert any(f.evidence[0].rule_id == "prodval.registered-not-invoked" for f in findings)
+
+    async def test_without_symbol_index_preserves_diff_local_behavior(self, tmp_path):
+        startup = tmp_path / "startup.py"
+        startup.write_text(REGISTERED_NOT_INVOKED, encoding="utf-8")
+        (tmp_path / "workers").mkdir(parents=True)
+        (tmp_path / "workers" / "legacy.py").write_text(LEGACY_FILE, encoding="utf-8")
+        (tmp_path / "consumer.py").write_text(USED_FILE, encoding="utf-8")
+
+        ctx = LensContext(
+            change_id="c1",
+            repo_id="org/repo",
+            files=[LensFile(path="startup.py", content=REGISTERED_NOT_INVOKED)],
+        )
+
+        findings = await ProductionValidationLens().run(ctx)
+
+        assert any(f.evidence[0].rule_id == "prodval.registered-not-invoked" for f in findings)
+
+    async def test_repo_wide_symbol_index_suppresses_false_positive_when_caller_exists(self, tmp_path):
+        startup = tmp_path / "startup.py"
+        startup.write_text(REGISTERED_NOT_INVOKED, encoding="utf-8")
+        (tmp_path / "workers").mkdir(parents=True)
+        (tmp_path / "workers" / "legacy.py").write_text(LEGACY_FILE, encoding="utf-8")
+        (tmp_path / "consumer.py").write_text(USED_FILE, encoding="utf-8")
+
+        ctx = LensContext(
+            change_id="c1",
+            repo_id="org/repo",
+            files=[LensFile(path="startup.py", content=REGISTERED_NOT_INVOKED)],
+            symbol_index=build_symbol_index(tmp_path),
+        )
+
+        findings = await ProductionValidationLens().run(ctx)
+
+        assert not any(f.evidence[0].rule_id == "prodval.registered-not-invoked" for f in findings)

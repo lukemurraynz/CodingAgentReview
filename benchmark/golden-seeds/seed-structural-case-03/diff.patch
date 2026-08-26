@@ -1,0 +1,8 @@
+diff --git a/structural/case-03/defect.py b/structural/case-03/defect.py
+new file mode 100644
+--- /dev/null
++++ b/structural/case-03/defect.py
+@@ -0,0 +1,3 @@
++def process_order(order):
++    status = 'complete'
++    return {'id': order['id'], 'status': status}

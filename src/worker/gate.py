@@ -36,11 +36,7 @@ def derive_gate_verdict(
 ) -> GateVerdict:
     """Block on blocker/high findings and on unacknowledged critical risk."""
     effective_risk = _max_risk_level(risk_floor, risk_level)
-    blocking_findings = sum(
-        1
-        for finding in findings
-        if effective_severity(finding) in _BLOCKING_SEVERITIES and finding.status not in _NON_BLOCKING_STATUSES
-    )
+    blocking_findings = _blocking_findings_count(findings)
     acknowledgement_required = effective_risk == RiskLevel.CRITICAL
     if blocking_findings:
         return GateVerdict(
@@ -106,6 +102,7 @@ def build_annotation_report(
             coverage=coverage,
             acknowledged=acknowledged,
         ),
+        auto_fix_available=_blocking_findings_count(findings) > 0,
         run_status=run.status,
         coverage=run.coverage,
         lens_coverage=coverage.as_line(),
@@ -133,6 +130,14 @@ def _collect_scope_notes(findings: list[Finding], scope_notes: tuple[str, ...]) 
     for finding in findings:
         notes.extend(finding_not_flagged(finding))
     return tuple(dict.fromkeys(notes))
+
+
+def _blocking_findings_count(findings: list[Finding]) -> int:
+    return sum(
+        1
+        for finding in findings
+        if effective_severity(finding) in _BLOCKING_SEVERITIES and finding.status not in _NON_BLOCKING_STATUSES
+    )
 
 
 def _max_risk_level(left: RiskLevel, right: RiskLevel) -> RiskLevel:

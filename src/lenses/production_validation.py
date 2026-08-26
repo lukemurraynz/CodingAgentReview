@@ -10,21 +10,20 @@ from __future__ import annotations
 
 import re
 
+from graph.symbols import REGISTRATION_REGEX
 from harness.dedup import make_key
 from harness.models import Evidence, Finding, FindingCategory, Severity
 
-from .base import Lens, LensContext
+from .base import Lens, LensContext, LensFile
 
-_REGISTRATION = re.compile(
-    r"(?:add_singleton|add_scoped|add_transient|register_instance|register_type|"
-    r"add_keyed_singleton|add_hosted_service)\s*\(\s*[\w.]+\s*,\s*(\w+)\b"
-    r"|@inject\s*\n(?:\s*)class\s+(\w+)"
-)
 _INVOCATION = re.compile(r"\b(\w+)\s*\(")
 _SUCCESS_LITERAL = re.compile(
     r"return\s+(?:['\"](?:complete|ok|success|done)['\"]|\bTrue\b|\b200\b)"
 )
-_AWAIT_OR_CALL = re.compile(r"\b(?:await\s+\w+[\w.]*(?:\([^)]*\))?)")
+# Success marker anywhere in an except body — covers `return {'status': 'ok'}` dicts too.
+_SUCCESS_MARKER = re.compile(r"['\"](?:complete[d]?|ok|success(?:ful)?|done)['\"]", re.IGNORECASE)
+_EXPLICIT_FAILURE_MARKER = re.compile(r"['\"]success['\"]\s*:\s*False", re.IGNORECASE)
+_AWAIT_OR_CALL = re.compile(r"\b(?:await\s+\w+[\w.]*(?:\([^)]*\))?|\w+[\w.]*\s*\([^)]*\))")
 _FALLBACK_BRANCH = re.compile(r"(?:if\s+\w+\s+is\s+None\s*:|except\b)")
 _TELEMETRY_CALL = re.compile(
     r"\b(logger|logging|\w*_?logger|meter|telemetry|track_|record_|emit_)\b", re.IGNORECASE
@@ -41,8 +40,14 @@ def _all_invocations(ctx: LensContext) -> set[str]:
 
 
 def _finding(
-    ctx: LensContext, path: str, content: str, lineno: int,
-    rule: str, severity: Severity, title: str, detail: str,
+    ctx: LensContext,
+    path: str,
+    content: str,
+    lineno: int,
+    rule: str,
+    severity: Severity,
+    title: str,
+    detail: str,
 ) -> Finding:
     return Finding(
         id=f"{ctx.change_id}:{rule}:{path}:{lineno}",
@@ -63,6 +68,10 @@ def _line_of(content: str, pos: int) -> int:
 
 class ProductionValidationLens(Lens):
     name = "production_validation"
+    version = "1"
+    not_flagged = (
+        "Does not exercise live deployments or runtime infrastructure state.",
+    )
 
     async def run(self, ctx: LensContext) -> list[Finding]:
         findings: list[Finding] = []
@@ -78,24 +87,39 @@ class ProductionValidationLens(Lens):
         return findings
 
     def _registered_not_invoked(
-        self, ctx: LensContext, lf, lines: list[str], invoked: set[str]
+        self, ctx: LensContext, lf: LensFile, lines: list[str], invoked: set[str]
     ) -> list[Finding]:
+        """Flag DI registrations with no callers, using repo-wide counts when a trusted symbol index exists.
+
+        This closes the earlier diff-local ceiling without changing behavior for callers that do not supply a
+        trusted symbol index.
+        """
+
+        del lines
         out: list[Finding] = []
-        for m in _REGISTRATION.finditer(lf.content):
+        for m in REGISTRATION_REGEX.finditer(lf.content):
             registered_name = m.group(1) or m.group(2)
             if not registered_name:
                 continue
-            # Invoked = constructed/called somewhere OTHER than this registration line.
-            other_calls = sum(
-                len(re.findall(rf"\b{re.escape(registered_name)}\s*\(", o.content))
-                for o in ctx.files
-            )
-            this_line_calls = len(re.findall(rf"\b{re.escape(registered_name)}\s*\(", m.group(0)))
-            if other_calls - this_line_calls <= 0 and registered_name not in invoked:
+            referenced = False
+            if ctx.symbol_index is not None:
+                referenced = ctx.symbol_index.is_referenced_elsewhere(registered_name)
+            else:
+                # Invoked = constructed/called somewhere OTHER than this registration line.
+                other_calls = sum(
+                    len(re.findall(rf"\b{re.escape(registered_name)}\s*\(", other.content))
+                    for other in ctx.files
+                )
+                this_line_calls = len(re.findall(rf"\b{re.escape(registered_name)}\s*\(", m.group(0)))
+                referenced = other_calls - this_line_calls > 0 or registered_name in invoked
+            if not referenced:
                 lineno = _line_of(lf.content, m.start())
                 out.append(
                     _finding(
-                        ctx, lf.path, lf.content, lineno,
+                        ctx,
+                        lf.path,
+                        lf.content,
+                        lineno,
                         "prodval.registered-not-invoked",
                         Severity.HIGH,
                         f"'{registered_name}' registered but never invoked",
@@ -129,7 +153,8 @@ class ProductionValidationLens(Lens):
                     j += 1
                 body_text = "\n".join(body)
                 if (
-                    _SUCCESS_LITERAL.search(body_text)
+                    (_SUCCESS_LITERAL.search(body_text) or _SUCCESS_MARKER.search(body_text))
+                    and not _EXPLICIT_FAILURE_MARKER.search(body_text)
                     and not re.search(r"\braise\b", body_text)
                     and _AWAIT_OR_CALL.search("\n".join(lines[max(0, i - 6):i]))
                 ):

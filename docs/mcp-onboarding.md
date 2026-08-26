@@ -12,6 +12,7 @@ The harness exposes a Model Context Protocol (MCP) server at `/mcp`. Any MCP-cap
 | `get_active_findings` | List active findings (candidate/confirmed/reopened) for a repository |
 | `get_risk_explanation` | Risk level and contributing signals for a specific change ID |
 | `get_related_changes` | Other changes sharing dedup keys or overlapping files with a given change or finding |
+| `fix.propose` | Request a bounded patch proposal for given findings + diff; returns a proposal only - it never applies or commits anything |
 
 Server name (as returned by `initialize`): `engineering-harness`
 
@@ -168,3 +169,14 @@ Expected response includes `"name": "engineering-harness"` in `result.serverInfo
 | HTTP 403, error code `-32003` | Token not scoped to this repo | Ask platform team to add `org/repo` to your token's `repos` claim |
 | `mode: async` in `review.validate_change` response | Diff exceeds 500 lines | Submit via pull request for full review; the sync path only handles ≤500 changed lines |
 | JSON-RPC error code `-32601` | Unknown method name | Check tool name spelling — use `tools/list` to enumerate available names |
+
+## Granting an agent (service principal) access to a repository
+
+Repo access comes from Entra **app roles** whose value is the repo id, plus a matching read scope:
+
+1. On the `harness-mcp` app registration, add an application role with value `repo:org/repo:read`.
+2. Assign that role to your agent's service principal (this constitutes admin consent).
+3. Tokens minted via client-credentials will carry `roles: ["repo:org/repo:read"]` and are authorized for `org/repo` only.
+
+Alternatively, tokens may carry a custom `"repos": ["org/repo"]` claim from your own claims provider - both shapes are honored.
+

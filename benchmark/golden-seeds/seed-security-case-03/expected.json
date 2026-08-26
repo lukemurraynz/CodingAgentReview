@@ -1,0 +1,7 @@
+[
+  {
+    "path": "security/case-03/defect.py",
+    "title_regex": "(?i)unsafe.?deserializ|yaml\\.load|SafeLoader",
+    "severity": null
+  }
+]

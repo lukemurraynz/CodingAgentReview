@@ -163,7 +163,7 @@ The suite exists and produces a gated exit code via `--gate`. The CI step that m
 | SC-001 | p95 review-to-posting ≤ 5 min | **pending-live** |
 | SC-002 | Zero Actions minutes / zero external credits | **pending-live** |
 | SC-003 | MCP round-trip ≤ 60 s at p95 | **pending-live** |
-| SC-004 | ≥80% detection, ≤15% FPR | **verified-offline** (scoring); **pending-live** (live run) |
+| SC-004 | ≥80% detection, ≤15% FPR | **live-measured 2026-08-26**: 72.2% detection (13 missed→5 after lens fixes), 0% FP, 11/11 injections resisted on `gpt-4.1-mini` via `scripts/run_baseline.py --gate`. NO-GO vs 80% — remaining misses are LLM-lens-only cases (T026 prompt/model iteration). Gate mechanics verified-offline (`tests/unit/test_sc004_gate.py`) |
 | SC-005 | ≥90% reopen vs duplicate rate | **verified-offline** (mechanics); **pending-live** (rate) |
 | SC-006 | Zero local setup beyond auth | **verified-offline** (contract); **pending-live** (real agent) |
 | SC-007 | 100% critical actions have prior approval | **verified-offline** (gate); **pending-live** (episode audit) |

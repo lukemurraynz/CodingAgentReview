@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 from datetime import UTC, datetime
 
 from harness.models import (
@@ -15,43 +14,50 @@ from harness.models import (
     ChangeType,
     Finding,
     GitProvider,
-    LensResult,
-    LensStatus,
     ReviewRun,
     RiskLevel,
-    RiskSignal,
     RunStatus,
     Severity,
 )
 from harness.queue import QUEUE_NAME, ReviewQueueConsumer
 from harness.telemetry import configure_telemetry
-from lenses import LENS_REGISTRY, LensContext, lens_not_flagged, lens_version
+from lenses import LENS_REGISTRY, LensContext
 from lenses.diffparse import parse_unified_diff
-from lenses.llm import CorrectnessLens, LensUnavailable, SecurityLens
-from providers.azuredevops import AzureDevOpsAdapter, LinkedWorkItemCompleteness
+from providers.azuredevops import AzureDevOpsAdapter
 from providers.base import PROMPT_VERSION, AnnotationReport
 from providers.github import GitHubAdapter
-from worker.attribution import classify_failure
-from worker.budget import RunBudget
-from worker.depth import classify_review_depth, coerce_risk_signals
+from worker.depth import classify_review_depth
 from worker.exploitability import annotate_security_findings, build_provider_findings, effective_severity
 from worker.gate import build_annotation_report
-from worker.llm_review import coerce_applicable_rules, compose_rule_aware_client, resolve_rule_briefs
+from worker.llm_review import (
+    build_trusted_symbol_index_context,
+    coerce_applicable_rules,
+    compose_rule_aware_client,
+    resolve_rule_briefs,
+)
 from worker.persistence import make_repository as _make_repository
 from worker.persistence import mark_superseded_runs as _mark_superseded_runs
 from worker.persistence import persist
-from worker.second_opinion import apply_second_opinions, mark_second_opinion_candidate
-from worker.stopconditions import MAX_CONSECUTIVE_FAILURES, evaluate_consecutive_failures
-from worker.suppression import attach_scope, merge_duplicate_findings
-
-logger = logging.getLogger("worker.runner")
+from worker.runner_helpers import (
+    budget_from_env,
+    build_review_metadata,
+    effective_risk_level,
+    fetch_workitem_completeness,
+    load_symbol_index,
+    risk_signals_from_event,
+)
+from worker.runner_lenses import LLM_LENSES as DEFAULT_LLM_LENSES
+from worker.runner_lenses import execute_lenses
+from worker.second_opinion import apply_second_opinions
+from worker.suppression import merge_duplicate_findings
 
 ADAPTERS = {
     GitHubAdapter.name: GitHubAdapter(),
     AzureDevOpsAdapter.name: AzureDevOpsAdapter(),
 }
 
-LLM_LENSES = {"correctness": CorrectnessLens(), "security": SecurityLens()}
+logger = logging.getLogger("worker.runner")
+LLM_LENSES = DEFAULT_LLM_LENSES
 _INLINE_ANNOTATION_SEVERITIES = {Severity.BLOCKER, Severity.HIGH}
 _DEFAULT_SECOND_OPINION_LIMIT = 5
 
@@ -65,7 +71,7 @@ async def execute_review(event_data: dict[str, object]) -> ReviewRun:
     pr_number_raw = event_data.get("prNumber")
     base_sha = str(event_data.get("baseSha") or "")
     classification = str(event_data.get("classification") or "code")
-    risk_signals = _risk_signals_from_event(event_data.get("riskSignals"))
+    risk_signals = risk_signals_from_event(event_data.get("riskSignals"))
     acknowledged = bool(event_data.get("riskAcknowledged", False))
 
     adapter = ADAPTERS[provider_name]
@@ -92,108 +98,39 @@ async def execute_review(event_data: dict[str, object]) -> ReviewRun:
         changed_paths=[lens_file.path for lens_file in lens_files] or change.changed_files,
         risk_signals=risk_signals,
     )
-    budget = _budget_from_env()
-    consecutive_failures = 0
-    findings: list[Finding] = []
-    degraded_reasons: list[str] = []
-    executed_lenses: list[str] = []
-    unavailable_lenses: list[str] = []
-    scope_notes: list[str] = []
+    budget = budget_from_env()
     base_model_client = event_data.get("modelClient")
     model_deployment = str(event_data.get("modelDeployment") or "")
+    symbol_index, symbol_index_reason = load_symbol_index()
+    degraded_reasons: list[str] = [] if symbol_index_reason is None else [symbol_index_reason]
     rule_briefs = resolve_rule_briefs(
         changed_paths=tuple(lens_file.path for lens_file in lens_files),
         applicable_rules=coerce_applicable_rules(event_data.get("applicableRules")),
     )
-    model_client = compose_rule_aware_client(base_model_client, rule_briefs)
+    model_client = compose_rule_aware_client(
+        base_model_client,
+        rule_briefs,
+        trusted_user_context=build_trusted_symbol_index_context(symbol_index),
+    )
 
-    for name in depth_policy.lenses:
-        scope_notes.extend(_lens_scope_notes(name))
-        if budget.exhausted:
-            run.lens_results.append(
-                LensResult(lens=name, status=LensStatus.SKIPPED_BUDGET, error=None)
-            )
-            continue
-        if budget.is_diminishing():
-            # FR-025 diminishing-returns stop (ported from Claude Code tokenBudget.ts):
-            # two consecutive sub-threshold deltas means remaining lenses add no signal.
-            degraded_reasons.append(f"diminishing_returns:{name}")
-            run.lens_results.append(
-                LensResult(lens=name, status=LensStatus.SKIPPED_BUDGET)
-            )
-            continue
-        lens = LENS_REGISTRY.get(name) or LLM_LENSES.get(name)
-        if lens is None:
-            unavailable_lenses.append(name)
-            degraded_reasons.append(f"lens_missing:{name}")
-            continue
-        started = time.monotonic()
-        try:
-            ctx = LensContext(
-                change_id=change_id,
-                repo_id=repo_id,
-                files=lens_files,
-                model_client=model_client,
-                model_deployment=model_deployment,
-            )
-            produced = await lens.run(ctx)
-            duration_ms = int((time.monotonic() - started) * 1000)
-            usage = getattr(lens, "last_usage", None)
-            if usage:
-                budget.record(
-                    input_tokens=int(usage.get("input_tokens", 0)),
-                    output_tokens=int(usage.get("output_tokens", 0)),
-                    compute_ms=duration_ms,
-                )
-            produced_findings = [attach_scope(finding, _lens_scope_notes(name)) for finding in produced]
-            if name in LLM_LENSES:
-                produced_findings = [mark_second_opinion_candidate(finding, name) for finding in produced_findings]
-            findings.extend(produced_findings)
-            run.lens_results.append(
-                LensResult(
-                    lens=name,
-                    status=LensStatus.COMPLETED,
-                    findings_count=len(produced),
-                    duration_ms=duration_ms,
-                )
-            )
-            executed_lenses.append(name)
-            consecutive_failures = 0
-        except LensUnavailable as exc:
-            unavailable_lenses.append(name)
-            degraded_reasons.append(f"model_unavailable:{name}")
-            run.lens_results.append(
-                LensResult(
-                    lens=name,
-                    status=LensStatus.SKIPPED_POLICY,
-                    error=str(exc),
-                    duration_ms=int((time.monotonic() - started) * 1000),
-                )
-            )
-        except Exception as exc:  # noqa: BLE001 — isolated by design (FR-009)
-            duration_ms = int((time.monotonic() - started) * 1000)
-            reason = classify_failure(exc)
-            logger.warning("lens %s failed (%s): %s", name, reason, exc)
-            run.lens_results.append(
-                LensResult(
-                    lens=name,
-                    status=LensStatus.FAILED,
-                    error=f"{reason}: {exc}",
-                    duration_ms=duration_ms,
-                )
-            )
-            executed_lenses.append(name)
-            degraded_reasons.append(f"{reason}:{name}")
-            consecutive_failures += 1
-            stop = evaluate_consecutive_failures(
-                consecutive_failures,
-                limit=MAX_CONSECUTIVE_FAILURES,
-            )
-            if stop.should_stop:
-                degraded_reasons.append(stop.reason)
-                break
-        finally:
-            budget.mark_check()
+    lens_outcome = await execute_lenses(
+        run=run,
+        lens_names=depth_policy.lenses,
+        change_id=change_id,
+        repo_id=repo_id,
+        files=lens_files,
+        model_client=model_client,
+        model_deployment=model_deployment,
+        symbol_index=symbol_index,
+        budget=budget,
+        registry=LENS_REGISTRY,
+        llm_lenses=LLM_LENSES,
+    )
+    findings = lens_outcome.findings
+    degraded_reasons.extend(lens_outcome.degraded_reasons)
+    executed_lenses = lens_outcome.executed_lenses
+    unavailable_lenses = lens_outcome.unavailable_lenses
+    scope_notes = lens_outcome.scope_notes
 
     run.input_tokens = budget.input_tokens
     run.output_tokens = budget.output_tokens
@@ -208,6 +145,7 @@ async def execute_review(event_data: dict[str, object]) -> ReviewRun:
             files=lens_files,
             model_client=model_client,
             model_deployment=model_deployment,
+            symbol_index=symbol_index,
         ),
         budget=budget,
         base_client=base_model_client,
@@ -220,16 +158,11 @@ async def execute_review(event_data: dict[str, object]) -> ReviewRun:
     run.input_tokens = budget.input_tokens
     run.output_tokens = budget.output_tokens
     run.compute_ms = budget.compute_ms
-    object.__setattr__(
-        run,
-        "_review_metadata",
-        {
-            "declared_lenses": depth_policy.lenses,
-            "executed_lenses": tuple(dict.fromkeys(executed_lenses)),
-            "unavailable_lenses": tuple(dict.fromkeys(unavailable_lenses)),
-            "lens_versions": {name: lens_version(name) for name in depth_policy.lenses},
-            "prompt_version": PROMPT_VERSION,
-        },
+    run.review_metadata = build_review_metadata(
+        declared_lenses=depth_policy.lenses,
+        executed_lenses=executed_lenses,
+        unavailable_lenses=unavailable_lenses,
+        prompt_version=PROMPT_VERSION,
     )
     base_status = RunStatus.DEGRADED if degraded_reasons else RunStatus.COMPLETED
     if unavailable_lenses:
@@ -245,7 +178,7 @@ async def execute_review(event_data: dict[str, object]) -> ReviewRun:
     run.completed_at = datetime.now(UTC)
 
     await persist(run, findings, repository=repository)
-    wi_completeness = await _fetch_workitem_completeness(adapter, change)
+    wi_completeness = await fetch_workitem_completeness(adapter, change)
     report = _build_report(
         run,
         findings,
@@ -278,36 +211,6 @@ async def execute_review(event_data: dict[str, object]) -> ReviewRun:
     return run
 
 
-def _budget_from_env() -> RunBudget:
-    return RunBudget(
-        max_input_tokens=int(os.environ.get("HARNESS_BUDGET_INPUT_TOKENS", "200000")),
-        max_output_tokens=int(os.environ.get("HARNESS_BUDGET_OUTPUT_TOKENS", "20000")),
-        max_compute_ms=int(os.environ.get("HARNESS_BUDGET_COMPUTE_MS", "240000")),
-    )
-
-
-def _risk_signals_from_event(raw: object) -> tuple[RiskSignal, ...]:
-    return coerce_risk_signals(raw)
-
-
-async def _fetch_workitem_completeness(adapter: AzureDevOpsAdapter | GitHubAdapter, change: Change) -> str:
-    """Best-effort linked-work-item summary; only adapters exposing the ADO completeness API respond."""
-    fetcher = getattr(adapter, "fetch_linked_workitem_completeness", None)
-    if not callable(fetcher):
-        return ""
-    try:
-        result: LinkedWorkItemCompleteness = await fetcher(change)
-    except Exception as exc:  # noqa: BLE001 - enrichment failure degrades visibly, never blocks review
-        logger.warning("work-item completeness fetch failed: %s", exc)
-        return ""
-    total = len(result.open_states) + (1 if result.complete else 0)
-    if total == 0:
-        return ""
-    done = total - len(result.open_states)
-    suffix = "" if result.complete else f" (open: {', '.join(sorted(set(result.open_states)))})"
-    return f"Linked work items: {done}/{total} complete{suffix}"
-
-
 def _build_report(
     run: ReviewRun,
     findings: list[Finding],
@@ -324,7 +227,7 @@ def _build_report(
     return build_annotation_report(
         run,
         findings,
-        risk_level=_effective_risk_level(risk_floor, risk_level),
+        risk_level=effective_risk_level(risk_floor, risk_level),
         risk_floor=risk_floor,
         declared_lenses=declared_lenses,
         executed_lenses=executed_lenses,
@@ -333,15 +236,6 @@ def _build_report(
         acknowledged=acknowledged,
         workitem_completeness=workitem_completeness,
     )
-
-
-def _lens_scope_notes(lens_name: str) -> tuple[str, ...]:
-    return lens_not_flagged(lens_name)
-
-
-def _effective_risk_level(risk_floor: RiskLevel, risk_level: RiskLevel) -> RiskLevel:
-    order = {RiskLevel.LOW: 0, RiskLevel.MEDIUM: 1, RiskLevel.HIGH: 2, RiskLevel.CRITICAL: 3}
-    return risk_floor if order[risk_floor] >= order[risk_level] else risk_level
 
 
 async def main_loop() -> None:  # pragma: no cover - process entrypoint

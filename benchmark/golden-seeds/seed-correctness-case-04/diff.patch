@@ -1,0 +1,11 @@
+diff --git a/correctness/case-04/defect.py b/correctness/case-04/defect.py
+new file mode 100644
+--- /dev/null
++++ b/correctness/case-04/defect.py
+@@ -0,0 +1,6 @@
++def price_for(items, key):
++    try:
++        return items[key]
++    except KeyError:
++        pass
++    return 0

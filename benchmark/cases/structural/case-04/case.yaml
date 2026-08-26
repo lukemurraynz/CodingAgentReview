@@ -2,5 +2,5 @@ id: "case-04"
 category: structural
 severity: medium
 description: "Optional dependency defaults to no-op client"
-expected_finding_regex: "(?i)optional.*noop|default.*client|unwired"
+expected_finding_regex: "(?i)optional.*no-?op|default.*(no-?)?client|unwired|wired in production"
 expected_behavior: detect

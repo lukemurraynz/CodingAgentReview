@@ -1,0 +1,10 @@
+diff --git a/correctness/case-03/defect.py b/correctness/case-03/defect.py
+new file mode 100644
+--- /dev/null
++++ b/correctness/case-03/defect.py
+@@ -0,0 +1,5 @@
++def is_admin(user):
++    role = 'admin'
++    if user.role = None:
++        return False
++    return True

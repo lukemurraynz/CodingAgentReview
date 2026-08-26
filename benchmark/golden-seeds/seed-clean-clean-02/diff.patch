@@ -1,0 +1,13 @@
+diff --git a/clean/clean-02/code.py b/clean/clean-02/code.py
+new file mode 100644
+--- /dev/null
++++ b/clean/clean-02/code.py
+@@ -0,0 +1,8 @@
++import json
++
++
++def parse_payload(raw: bytes) -> dict:
++    data = json.loads(raw)
++    if not isinstance(data, dict):
++        raise ValueError('payload must be an object')
++    return data

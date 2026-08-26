@@ -1,0 +1,7 @@
+[
+  {
+    "path": "correctness/case-02/defect.py",
+    "title_regex": "default argument|mutable default|\\.append",
+    "severity": null
+  }
+]

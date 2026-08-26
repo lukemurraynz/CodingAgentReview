@@ -1,0 +1,8 @@
+diff --git a/security/case-01/defect.py b/security/case-01/defect.py
+new file mode 100644
+--- /dev/null
++++ b/security/case-01/defect.py
+@@ -0,0 +1,3 @@
++def get_user(conn, uid):
++    query = f"SELECT * FROM users WHERE id = {uid}"
++    return conn.execute(query).fetchall()

@@ -9,9 +9,9 @@ from .enums import (
     RiskLevel,
     Severity,
 )
-from .finding import Evidence, Finding, Waiver  # noqa: F401  (Waiver re-exported)
+from .finding import Evidence, ExploitabilityMetadata, Finding, Waiver  # noqa: F401  (Waiver re-exported)
 from .risk import RiskAssessment, RiskSignal
-from .run import LensResult, LensStatus, ReviewRun, RunStatus
+from .run import LensResult, LensStatus, ReviewMetadata, ReviewRun, RunStatus
 from .specification import Invariant, LensName, Specification
 
 __all__ = [
@@ -19,6 +19,7 @@ __all__ = [
     "ChangeClassification",
     "ChangeType",
     "Evidence",
+    "ExploitabilityMetadata",
     "Finding",
     "FindingCategory",
     "GitProvider",
@@ -26,6 +27,7 @@ __all__ = [
     "LensName",
     "LensResult",
     "LensStatus",
+    "ReviewMetadata",
     "ReviewRun",
     "RiskAssessment",
     "RiskLevel",

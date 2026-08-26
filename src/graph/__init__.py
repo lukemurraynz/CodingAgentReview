@@ -20,19 +20,31 @@ from .resolver import (
     resolve_applicable_specifications,
 )
 from .scanner import ArtifactKind, DiscoveredArtifact, discover_specification_artifacts
+from .symbols import (
+    REGISTRATION_PATTERN,
+    InvocationStat,
+    ParseIssue,
+    SymbolIndex,
+    build_symbol_index,
+)
 
 __all__ = [
     "ApplicableSpecification",
     "ApplicableRule",
     "ArtifactKind",
+    "build_symbol_index",
     "build_lens_briefs",
     "DiscoveredArtifact",
     "GroundedRiskDriver",
+    "InvocationStat",
     "LoadedRule",
     "LoadedSpecification",
+    "ParseIssue",
+    "REGISTRATION_PATTERN",
     "RuleLoadError",
     "SpecificationGraph",
     "SpecificationLoadError",
+    "SymbolIndex",
     "discover_specification_artifacts",
     "ground_risk_drivers",
     "load_rules",

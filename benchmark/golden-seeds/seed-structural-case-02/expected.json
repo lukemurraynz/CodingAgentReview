@@ -1,0 +1,7 @@
+[
+  {
+    "path": "structural/case-02/defect.py",
+    "title_regex": "(?i)silent.?fail|except Exception|warning|swallow",
+    "severity": null
+  }
+]

@@ -1,0 +1,7 @@
+[
+  {
+    "path": "correctness/case-05/defect.py",
+    "title_regex": "\\.get\\(|fallback|wrong key",
+    "severity": null
+  }
+]

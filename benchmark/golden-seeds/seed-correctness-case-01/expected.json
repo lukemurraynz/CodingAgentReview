@@ -1,0 +1,7 @@
+[
+  {
+    "path": "correctness/case-01/defect.py",
+    "title_regex": "range\\(len\\(|off.by.one",
+    "severity": null
+  }
+]

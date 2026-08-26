@@ -7,6 +7,9 @@ param cosmosAccountId string
 param backlogThreshold int = 25
 param cosmos429Threshold int = 100
 
+// Cold workspaces lack the AppTraces table; flip on after first worker telemetry.
+param enableReviewRunFailureAlert bool = false
+
 var reviewRunFailureQuery = '''
 union isfuzzy=true AppTraces
 | where Message has 'annotation posting failed' or (Message startswith 'lens ' and Message has 'failed')
@@ -124,7 +127,7 @@ resource cosmosThrottleAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
   }
 }
 
-resource reviewRunFailureAlert 'Microsoft.Insights/scheduledQueryRules@2021-08-01' = {
+resource reviewRunFailureAlert 'Microsoft.Insights/scheduledQueryRules@2021-08-01' = if (enableReviewRunFailureAlert) {
   name: 'alert-${namePrefix}-review-run-failures'
   location: location
   properties: {

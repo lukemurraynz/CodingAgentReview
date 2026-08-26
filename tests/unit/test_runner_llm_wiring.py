@@ -9,12 +9,14 @@ from pathlib import Path
 import pytest
 
 from graph import ApplicableRule
+from graph.symbols import SymbolIndex
 from harness.models import RiskLevel, Severity
 from harness.models.specification import ReviewRule
 from lenses.llm import CorrectnessLens, SecurityLens
 from providers.formatting import build_comment_body
 from worker import runner
 from worker.depth import ReviewDepthPolicy
+from worker.llm_review import build_trusted_symbol_index_context, compose_rule_aware_client
 
 
 def _event_payload(**extra: object) -> dict[str, object]:
@@ -176,6 +178,33 @@ async def test_harness_rules_root_resolves_rule_briefs(
     await runner.execute_review(_event_payload(modelClient=model))
 
     assert "route-guard" in str(model.calls[0]["user_prompt"])
+
+
+async def test_trusted_symbol_index_context_is_prepended_and_bounded() -> None:
+    symbol_index = SymbolIndex(
+        definitions={},
+        invocations={},
+        registrations={
+            f"Service{index}": (("src/services.py", index),)
+            for index in range(1, 13)
+        },
+        routes=(),
+        parse_issues=(),
+    )
+    model = ScriptedModel([_response([])])
+    wrapped = compose_rule_aware_client(
+        model,
+        {},
+        trusted_user_context=build_trusted_symbol_index_context(symbol_index),
+    )
+
+    await wrapped(system_prompt="sys", user_prompt="USER BODY", deployment="dep", lens="correctness")
+
+    user_prompt = str(model.calls[0]["user_prompt"])
+    assert user_prompt.startswith("TRUSTED REPOSITORY CONTEXT")
+    assert "USER BODY" in user_prompt
+    assert user_prompt.count("registered src/services.py") == 10
+    assert "Service12" not in user_prompt
 
 
 async def test_security_findings_render_exploitability_in_summary(llm_state, monkeypatch: pytest.MonkeyPatch) -> None:

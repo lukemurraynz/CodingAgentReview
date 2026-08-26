@@ -17,8 +17,12 @@ from .models import AttemptRecord, FixProposal, FixStatus, ValidationResult
 
 _HUNK_HEADER = re.compile(r"^@@ -(?P<old>\d+)(?:,(?P<old_count>\d+))? \+(?P<new>\d+)(?:,(?P<new_count>\d+))? @@")
 _SYSTEM_PROMPT = (
-    "You propose minimal unified diffs for the provided changed files only. "
-    "Never touch files outside the allowed set. Return only a unified diff."
+    "You propose minimal unified diffs that fix the reported findings. "
+    "Hard rules: touch ONLY files shown in FILE blocks; change only the lines the "
+    "finding requires — no refactors, no renames, no new dependencies, no drive-by "
+    "formatting; preserve all unrelated code exactly. If a finding cannot be fixed "
+    "safely, return an empty diff rather than a speculative one. "
+    "Return ONLY the unified diff — no prose before or after."
 )
 _MAX_ITERATIONS_ENV = "HARNESS_FIX_MAX_ITERATIONS"
 

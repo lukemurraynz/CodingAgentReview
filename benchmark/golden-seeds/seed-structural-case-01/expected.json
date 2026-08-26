@@ -1,0 +1,7 @@
+[
+  {
+    "path": "structural/case-01/defect.py",
+    "title_regex": "(?i)noop|no-op",
+    "severity": null
+  }
+]

@@ -4,16 +4,29 @@ param name string
 param location string
 
 var modelName = 'model-router'
+var projectUaiName = '${name}-proj-uai'
 
-resource account 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
+// Projects preflight requires a user-assigned managed identity on the account.
+resource projectUai 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: projectUaiName
+  location: location
+}
+
+// 2025-04-01-preview: required for allowProjectManagement (projects support).
+resource account 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
   name: name
   location: location
   kind: 'AIServices'
   sku: { name: 'S0' }
-  identity: { type: 'SystemAssigned' }
+  identity: {
+    type: 'SystemAssigned,UserAssigned'
+    userAssignedIdentities: { '${projectUai.id}': {} }
+  }
   properties: {
     customSubDomainName: name
     publicNetworkAccess: 'Enabled'
+    // Required so the nested `projects` resource can be created on this account.
+    allowProjectManagement: true
     // INTERIM: local auth enabled because CA+UAI workload-identity federation
     // isn't wired yet (Phase-2 hardening). Keys live only in CA secret store;
     // lenses attempt Entra first and fall back to key (llm.py dual-path).
@@ -45,12 +58,12 @@ output accountId string = account.id
 
 // Foundry project — hosts the Agent-Framework harness surface
 // (FOUNDRY_PROJECT_ENDPOINT for agent-framework-foundry).
-resource harnessProject 'Microsoft.CognitiveServices/accounts/projects@2025-09-01' = {
+// Created out-of-band via `az cognitiveservices account project create` because
+// the ARM preflight races the account's allowProjectManagement/identity PUTs.
+// Referenced as existing so deployments don't re-create it.
+resource harnessProject 'Microsoft.CognitiveServices/accounts/projects@2025-09-01' existing = {
   parent: account
   name: 'harness'
-  properties: {
-    displayName: 'Agentic Engineering Harness'
-  }
 }
 
 output projectEndpoint string = 'https://${name}.services.ai.azure.com/api/projects/harness'

@@ -3,7 +3,7 @@
 import pytest
 
 from lenses import LensContext, LensFile
-from lenses.llm import CorrectnessLens, LensUnavailable
+from lenses.llm import CorrectnessLens, LensUnavailable, SecurityLens
 
 
 def _ctx(*, model_client: object | None, model_deployment: str = "") -> LensContext:
@@ -50,6 +50,15 @@ class _FakeClient:
         self.chat_completions = _FakeChatCompletions(response)
 
 
+class _CapturePrompt:
+    def __init__(self) -> None:
+        self.user_prompt = ""
+
+    async def __call__(self, **kwargs: object) -> dict[str, object]:
+        self.user_prompt = str(kwargs["user_prompt"])
+        return {"text": "[]"}
+
+
 @pytest.mark.asyncio
 class TestLLMLens:
     async def test_missing_endpoint_without_injection_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -86,3 +95,20 @@ class TestLLMLens:
         findings = await lens.run(_ctx(model_client=lambda **_: response, model_deployment="custom-model"))
         assert len(findings) == 1
         assert lens.last_usage == {"input_tokens": 12, "output_tokens": 4}
+
+    async def test_correctness_prompt_includes_targeted_examples(self) -> None:
+        client = _CapturePrompt()
+
+        await CorrectnessLens().run(_ctx(model_client=client))
+
+        assert "Off-by-one loop skips last item" in client.user_prompt
+        assert "except KeyError: pass" in client.user_prompt
+
+    async def test_security_prompt_includes_targeted_examples(self) -> None:
+        client = _CapturePrompt()
+
+        await SecurityLens().run(_ctx(model_client=client))
+
+        assert "SQL query built with f-string interpolation" in client.user_prompt
+        assert "hashlib.md5" in client.user_prompt
+        assert "../ traversal" in client.user_prompt

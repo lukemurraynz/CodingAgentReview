@@ -94,6 +94,10 @@ def _find_block_span(lines: list[str], idx: int) -> tuple[int, int]:
 
 class StructuralLens(Lens):
     name = "structural"
+    version = "1"
+    not_flagged = (
+        "Does not validate business correctness or external runtime behavior.",
+    )
 
     async def run(self, ctx: LensContext) -> list[Finding]:
         findings: list[Finding] = []

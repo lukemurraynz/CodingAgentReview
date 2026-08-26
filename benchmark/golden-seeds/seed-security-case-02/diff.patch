@@ -1,0 +1,10 @@
+diff --git a/security/case-02/defect.py b/security/case-02/defect.py
+new file mode 100644
+--- /dev/null
++++ b/security/case-02/defect.py
+@@ -0,0 +1,5 @@
++import subprocess
++
++
++def ping(host):
++    return subprocess.run(f'ping -c1 {host}', shell=True, capture_output=True)

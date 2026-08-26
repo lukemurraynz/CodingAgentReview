@@ -1,0 +1,12 @@
+diff --git a/clean/clean-01/code.py b/clean/clean-01/code.py
+new file mode 100644
+--- /dev/null
++++ b/clean/clean-01/code.py
+@@ -0,0 +1,7 @@
++def add(a: int, b: int) -> int:
++    """Add two integers."""
++    return a + b
++
++def mul(a: int, b: int) -> int:
++    """Multiply two integers."""
++    return a * b

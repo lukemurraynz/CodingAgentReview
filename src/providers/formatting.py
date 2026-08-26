@@ -74,8 +74,18 @@ def build_comment_body(
             detail, _ = redact_text(finding.detail or "")
             if detail:
                 lines.append(f"- **{title}**: {detail}")
+    _append_auto_fix_offer(lines, report, include_marker=include_marker)
     _append_scope_honesty(lines, report)
     return "\n".join(lines)
+
+
+def _append_auto_fix_offer(
+    lines: list[str], report: AnnotationReport | None, *, include_marker: bool
+) -> None:
+    if report is None or not include_marker or not report.auto_fix_available:
+        return
+    lines.append("### Auto-fix available")
+    lines.append("- Auto-fix available: invoke `fix.propose` via MCP with these findings before commit.")
 
 
 def _append_scope_honesty(lines: list[str], report: AnnotationReport | None) -> None:

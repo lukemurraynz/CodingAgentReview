@@ -1,0 +1,7 @@
+[
+  {
+    "path": "production_validation/case-04/defect.py",
+    "title_regex": "(?i)metric|observable|unused signal",
+    "severity": null
+  }
+]

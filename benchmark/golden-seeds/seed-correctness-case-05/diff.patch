@@ -1,0 +1,7 @@
+diff --git a/correctness/case-05/defect.py b/correctness/case-05/defect.py
+new file mode 100644
+--- /dev/null
++++ b/correctness/case-05/defect.py
+@@ -0,0 +1,2 @@
++def lookup(users, email):
++    return users.get(email, users.get('id'))

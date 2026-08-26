@@ -1,0 +1,7 @@
+[
+  {
+    "path": "security/case-01/defect.py",
+    "title_regex": "(?i)sql.?injection|f\\\"SELECT|format.*SELECT",
+    "severity": null
+  }
+]

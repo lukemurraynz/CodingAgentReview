@@ -9,14 +9,33 @@ import pytest
 from fastapi.testclient import TestClient
 
 from controlplane import create_app
+from harness.repository import DeliveryDedupStore
 
 SECRET = "test-secret"
+
+
+class _SharedDedupStore(DeliveryDedupStore):
+    def __init__(self) -> None:
+        self._items: dict[tuple[str, str, str], float] = {}
+
+    async def claim_delivery(self, key: tuple[str, str, str], *, ttl_seconds: float, now: float | None = None) -> bool:
+        current = 0.0 if now is None else now
+        expired = [entry_key for entry_key, expires_at in self._items.items() if expires_at <= current]
+        for entry_key in expired:
+            self._items.pop(entry_key, None)
+        if key in self._items:
+            return False
+        self._items[key] = current + ttl_seconds
+        return True
+
+    async def release_delivery_claim(self, key: tuple[str, str, str]) -> None:
+        self._items.pop(key, None)
 
 
 @pytest.fixture()
 def client(monkeypatch):
     monkeypatch.setenv("HARNESS_GITHUB_WEBHOOK_SECRET", SECRET)
-    return TestClient(create_app())
+    return TestClient(create_app(delivery_store=_SharedDedupStore()))
 
 
 def _signed(body: bytes) -> dict[str, str]:
@@ -101,7 +120,6 @@ def test_duplicate_webhook_is_deduplicated(client, monkeypatch):
     monkeypatch.setenv("HARNESS_SERVICEBUS_NS", "fake")
     import controlplane as cp
 
-    cp._dedup_registry.clear()
     monkeypatch.setattr(cp, "_send_event", enqueue)
     monkeypatch.setattr(cp, "_events", cp.EventEmitter(cp._send_event))
 
@@ -122,7 +140,6 @@ def test_different_sha_is_not_deduplicated(client, monkeypatch):
     monkeypatch.setenv("HARNESS_SERVICEBUS_NS", "fake")
     import controlplane as cp
 
-    cp._dedup_registry.clear()
     monkeypatch.setattr(cp, "_send_event", enqueue)
     monkeypatch.setattr(cp, "_events", cp.EventEmitter(cp._send_event))
 
@@ -149,24 +166,47 @@ def test_dedup_ttl_expiry_allows_reenqueue(client, monkeypatch):
 
     monkeypatch.setenv("HARNESS_SERVICEBUS_NS", "fake")
     monkeypatch.setenv("HARNESS_DEDUP_TTL_SECONDS", "10")
+    shared_store = _SharedDedupStore()
+    ticks = iter([100.0, 105.0, 111.0])
+    expiring_client = TestClient(
+        create_app(delivery_store=shared_store, dedup_now=ticks.__next__)
+    )
     import controlplane as cp
-
-    cp._dedup_registry.clear()
     monkeypatch.setattr(cp, "_send_event", enqueue)
     monkeypatch.setattr(cp, "_events", cp.EventEmitter(cp._send_event))
 
-    ticks = iter([100.0, 105.0, 111.0])
-    monkeypatch.setattr(cp, "_monotonic", lambda: next(ticks))
-
     body = _pr_body()
-    first = client.post("/webhooks/github", content=body, headers=_signed(body))
-    second = client.post("/webhooks/github", content=body, headers=_signed(body))
-    third = client.post("/webhooks/github", content=body, headers=_signed(body))
+    first = expiring_client.post("/webhooks/github", content=body, headers=_signed(body))
+    second = expiring_client.post("/webhooks/github", content=body, headers=_signed(body))
+    third = expiring_client.post("/webhooks/github", content=body, headers=_signed(body))
 
     assert first.json()["deduplicated"] is False
     assert second.json()["deduplicated"] is True
     assert third.json()["deduplicated"] is False
     assert state["count"] == 4
+
+
+def test_dedup_store_is_shared_across_controlplane_instances(monkeypatch):
+    state, enqueue = _fake_enqueue_counter()
+    shared_store = _SharedDedupStore()
+
+    monkeypatch.setenv("HARNESS_GITHUB_WEBHOOK_SECRET", SECRET)
+    monkeypatch.setenv("HARNESS_SERVICEBUS_NS", "fake")
+    import controlplane as cp
+
+    monkeypatch.setattr(cp, "_send_event", enqueue)
+    monkeypatch.setattr(cp, "_events", cp.EventEmitter(cp._send_event))
+
+    first_client = TestClient(create_app(delivery_store=shared_store))
+    second_client = TestClient(create_app(delivery_store=shared_store))
+    body = _pr_body()
+
+    first = first_client.post("/webhooks/github", content=body, headers=_signed(body))
+    second = second_client.post("/webhooks/github", content=body, headers=_signed(body))
+
+    assert first.json()["deduplicated"] is False
+    assert second.json()["deduplicated"] is True
+    assert state["count"] == 2
 
 
 def test_admin_specifications_shape(client, tmp_path):

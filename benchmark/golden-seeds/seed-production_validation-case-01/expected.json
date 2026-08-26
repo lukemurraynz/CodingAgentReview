@@ -1,0 +1,7 @@
+[
+  {
+    "path": "production_validation/case-01/defect.py",
+    "title_regex": "(?i)registered.*not.*invoked|never called|defined.*not.*wired",
+    "severity": null
+  }
+]

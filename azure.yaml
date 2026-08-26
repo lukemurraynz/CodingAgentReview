@@ -10,24 +10,37 @@ infra:
   module: main
 
 hooks:
+  preprovision:
+    windows:
+      shell: pwsh
+      run: infra/scripts/bootstrap-entra.ps1
+      interactive: false
+      continueOnError: false
+    posix:
+      shell: sh
+      run: echo 'bootstrap-entra.ps1 requires PowerShell (windows pipeline)'
   postprovision:
-    windows:
-      shell: pwsh
-      run: infra/scripts/grant-access.ps1
-      interactive: false
-      continueOnError: false
     posix:
       shell: sh
-      run: echo 'grant-access.ps1 requires PowerShell (windows pipeline)'
+      run: echo 'provision hooks require PowerShell (windows pipeline)'
+    windows:
+      shell: pwsh
+      run: |
+        infra/scripts/ensure-foundry-project.ps1
+        infra/scripts/grant-access.ps1
+      interactive: false
+      continueOnError: false
   postdeploy:
-    windows:
-      shell: pwsh
-      run: infra/scripts/grant-access.ps1
-      interactive: false
-      continueOnError: false
     posix:
       shell: sh
-      run: echo 'grant-access.ps1 requires PowerShell (windows pipeline)'
+      run: echo 'postdeploy hooks require PowerShell (windows pipeline)'
+    windows:
+      shell: pwsh
+      run: |
+        infra/scripts/ensure-foundry-project.ps1
+        infra/scripts/grant-access.ps1
+      interactive: false
+      continueOnError: false
 
 pipeline:
   provider: github

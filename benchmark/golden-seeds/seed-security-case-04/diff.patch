@@ -1,0 +1,10 @@
+diff --git a/security/case-04/defect.py b/security/case-04/defect.py
+new file mode 100644
+--- /dev/null
++++ b/security/case-04/defect.py
+@@ -0,0 +1,5 @@
++import hashlib
++
++
++def hash_password(pw: str) -> str:
++    return hashlib.md5(pw.encode()).hexdigest()

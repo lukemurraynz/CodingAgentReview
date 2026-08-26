@@ -11,8 +11,9 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from importlib import import_module
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from harness.events import (
     EventEmitter,
@@ -39,6 +40,19 @@ class FindingStore(Protocol):
     async def get_findings(self, repo_id: str) -> list[Finding]: ...
 
 
+@runtime_checkable
+class DeliveryDedupStore(Protocol):
+    async def claim_delivery(
+        self,
+        key: tuple[str, str, str],
+        *,
+        ttl_seconds: float,
+        now: float | None = None,
+    ) -> bool: ...
+
+    async def release_delivery_claim(self, key: tuple[str, str, str]) -> None: ...
+
+
 @dataclass(slots=True)
 class ReconcileResult:
     persisted: list[Finding] = field(default_factory=list)
@@ -49,6 +63,8 @@ class ReconcileResult:
 
 
 _ACTIVE_FINDING_STATUSES = {"candidate", "confirmed", "reopened"}
+_DELIVERY_DEDUP_CONTAINER = "deliveryDedups"
+_DELIVERY_DEDUP_ID_SEPARATOR = ":"
 
 
 def ensure_waiver_immutable(existing: Finding | None, finding: Finding) -> None:
@@ -96,6 +112,39 @@ def _sanitize_finding(finding: Finding) -> Finding:
         for evidence in finding.evidence
     ]
     return Finding.model_validate(payload)
+
+
+def _delivery_dedup_id(key: tuple[str, str, str]) -> str:
+    _, pr_or_commit, head_sha = key
+    return f"{pr_or_commit}{_DELIVERY_DEDUP_ID_SEPARATOR}{head_sha}"
+
+
+def _delivery_claim_payload(key: tuple[str, str, str], *, ttl_seconds: float, now: float | None) -> dict[str, object]:
+    repo_id, pr_or_commit, head_sha = key
+    issued_at = datetime.now(UTC) if now is None else datetime.fromtimestamp(now, UTC)
+    expires_at = issued_at + timedelta(seconds=max(ttl_seconds, 0.0))
+    return {
+        "id": _delivery_dedup_id(key),
+        "pk": repo_id,
+        "repo_id": repo_id,
+        "pr_or_commit": pr_or_commit,
+        "head_sha": head_sha,
+        "ttl": max(int(ttl_seconds), 0),
+        "issued_at": issued_at.isoformat(),
+        "expires_at": expires_at.isoformat(),
+    }
+
+
+def _delivery_claim_expired(item: dict[str, object], *, now: float | None) -> bool:
+    raw_expires_at = item.get("expires_at")
+    if not isinstance(raw_expires_at, str):
+        return False
+    current = datetime.now(UTC) if now is None else datetime.fromtimestamp(now, UTC)
+    return datetime.fromisoformat(raw_expires_at) <= current
+
+
+def _is_cosmos_error(exc: Exception, *names: str) -> bool:
+    return exc.__class__.__name__ in set(names)
 
 
 async def reconcile_findings(
@@ -237,6 +286,25 @@ class HarnessRepository:
         finally:
             await client.close()
 
+    @asynccontextmanager
+    async def _dedup_session(self) -> AsyncIterator[Any]:
+        endpoint = _endpoint()
+        if not endpoint:
+            raise RuntimeError("HARNESS_COSMOS_ENDPOINT not configured — state store unavailable")
+        cosmos_module = import_module("azure.cosmos.aio")
+        identity_module = import_module("azure.identity.aio")
+
+        client = cosmos_module.CosmosClient(
+            endpoint,
+            credential=identity_module.DefaultAzureCredential(),
+            **self._client_kwargs(),
+        )
+        try:
+            db = client.get_database_client(self.database_name)
+            yield db.get_container_client(_DELIVERY_DEDUP_CONTAINER)
+        finally:
+            await client.close()
+
     @staticmethod
     def request_timeout_seconds() -> int:
         """Cold-start budget for probes (known-pitfall binding): ≥10s request timeout."""
@@ -284,6 +352,49 @@ class HarnessRepository:
             await runs.upsert_item(
                 run.model_dump(mode="json") | {"id": run.id, "pk": run.change_id}
             )
+
+    async def claim_delivery(
+        self,
+        key: tuple[str, str, str],
+        *,
+        ttl_seconds: float,
+        now: float | None = None,
+    ) -> bool:
+        payload = _delivery_claim_payload(key, ttl_seconds=ttl_seconds, now=now)
+        async with self._dedup_session() as dedups:
+            try:
+                await dedups.create_item(payload)
+                return True
+            except Exception as exc:
+                if not _is_cosmos_error(exc, "CosmosResourceExistsError", "ResourceExistsError"):
+                    raise
+            try:
+                existing = await dedups.read_item(item=payload["id"], partition_key=payload["pk"])
+            except Exception as exc:
+                if _is_cosmos_error(exc, "CosmosResourceNotFoundError"):
+                    await dedups.create_item(payload)
+                    return True
+                raise
+            if not _delivery_claim_expired(existing, now=now):
+                return False
+            await dedups.delete_item(item=payload["id"], partition_key=payload["pk"])
+            try:
+                await dedups.create_item(payload)
+            except Exception as exc:
+                if _is_cosmos_error(exc, "CosmosResourceExistsError", "ResourceExistsError"):
+                    return False
+                raise
+            return True
+
+    async def release_delivery_claim(self, key: tuple[str, str, str]) -> None:
+        repo_id, _, _ = key
+        async with self._dedup_session() as dedups:
+            try:
+                await dedups.delete_item(item=_delivery_dedup_id(key), partition_key=repo_id)
+            except Exception as exc:
+                if _is_cosmos_error(exc, "CosmosResourceNotFoundError"):
+                    return
+                raise
 
     async def query_runs_for_change(self, change_id: str) -> list[dict[str, Any]]:
         async with self._session() as (_, runs):

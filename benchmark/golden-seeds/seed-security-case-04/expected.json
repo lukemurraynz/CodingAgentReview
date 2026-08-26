@@ -1,0 +1,7 @@
+[
+  {
+    "path": "security/case-04/defect.py",
+    "title_regex": "(?i)weak.?hash|md5|password",
+    "severity": null
+  }
+]

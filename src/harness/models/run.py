@@ -40,6 +40,16 @@ class LensResult(BaseModel):
         return self
 
 
+class ReviewMetadata(BaseModel):
+    """Run-level provenance for declared/executed coverage and prompt versions."""
+
+    declared_lenses: tuple[str, ...] = Field(default_factory=tuple)
+    executed_lenses: tuple[str, ...] = Field(default_factory=tuple)
+    unavailable_lenses: tuple[str, ...] = Field(default_factory=tuple)
+    lens_versions: dict[str, str] = Field(default_factory=dict)
+    prompt_version: str | None = None
+
+
 class ReviewRun(BaseModel):
     """Coverage is full or explicitly degraded — never silently truncated (FR-035)."""
 
@@ -53,6 +63,7 @@ class ReviewRun(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     compute_ms: int = 0
+    review_metadata: ReviewMetadata | None = None
     started_at: datetime = Field(default_factory=_utcnow)
     completed_at: datetime | None = None
 

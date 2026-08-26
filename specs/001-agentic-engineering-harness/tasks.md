@@ -34,7 +34,7 @@
 - [x] T010 Dedup key component `src/harness/dedup.py` (path + normalized content hash) behind swappable interface + unit tests (FR-015)
 - [x] T011 Risk signal aggregation skeleton `src/harness/risk.py` (FR-011 types only; logic lands in US3)
 - [x] T012 Provider adapter protocol `src/providers/base.py`: parse_webhook→Change, fetch_diff, post_annotations
-- [ ] T013 Service Bus queues/topics provisioned (`infra/`); enqueue/consume wrapper with at-least-once semantics + poison-queue handling; integration test proves no-loss under worker crash (FR-017) *(poison-queue handling landed; at-least-once + dedup verified offline — live crash-loss proof still requires a deployed run)*
+- [ ] T013 Service Bus queues/topics provisioned (`infra/`); enqueue/consume wrapper with at-least-once semantics + poison-queue handling; integration test proves no-loss under worker crash (FR-017) *(send→receive→complete round trip verified against live Service Bus 2026-08-26; worker-crash-kill variant remains)*
 - [x] T014 Cosmos DB containers + repository layer with partition-key design per plan.md data model; health probe sets `RequestTimeout≥10s` and 8 s cancellation (known-pitfall: Cosmos cold-start) *(health probe with 10s timeout/8s cancellation landed; live cold-start tuning still to verify on deployment)*
 - [x] T015 Blob evidence store helper `src/harness/evidence.py` (diff snapshots, large artifacts)
 - [x] T016 Shared Entra auth middleware + per-repo scoping dependency usable by both hosts (FR-019)

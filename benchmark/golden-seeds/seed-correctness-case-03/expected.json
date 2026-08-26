@@ -1,0 +1,7 @@
+[
+  {
+    "path": "correctness/case-03/defect.py",
+    "title_regex": "(?i)assignment|compare|==",
+    "severity": null
+  }
+]

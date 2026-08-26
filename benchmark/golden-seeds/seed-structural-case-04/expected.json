@@ -1,0 +1,7 @@
+[
+  {
+    "path": "structural/case-04/defect.py",
+    "title_regex": "(?i)optional.*no-?op|default.*(no-?)?client|unwired|wired in production",
+    "severity": null
+  }
+]

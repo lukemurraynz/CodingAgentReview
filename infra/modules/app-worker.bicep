@@ -3,6 +3,7 @@ param location string
 param environmentId string
 param image string
 param identityId string
+param azureClientId string
 param acrLoginServer string
 param serviceBusNamespaceName string
 @secure()
@@ -46,6 +47,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           resources: { cpu: json('1'), memory: '2Gi' }
           env: [
             { name: 'HARNESS_SERVICEBUS_LISTEN_CONN', secretRef: 'sb-listen-conn' }
+            { name: 'AZURE_CLIENT_ID', value: azureClientId }
             { name: 'HARNESS_COSMOS_ENDPOINT', value: cosmosEndpoint }
             { name: 'HARNESS_BLOB_ENDPOINT', value: blobEndpoint }
             { name: 'HARNESS_FOUNDRY_ENDPOINT', value: foundryEndpoint }

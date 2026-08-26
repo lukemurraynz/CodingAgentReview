@@ -1,0 +1,14 @@
+diff --git a/structural/case-04/defect.py b/structural/case-04/defect.py
+new file mode 100644
+--- /dev/null
++++ b/structural/case-04/defect.py
+@@ -0,0 +1,9 @@
++class NoopMetricsClient:
++    def increment(self, name): ...
++
++def build_service(metrics=None):
++    metrics = metrics or NoopMetricsClient()
++    return Service(metrics)
++
++class Service:
++    def __init__(self, metrics): self.metrics = metrics

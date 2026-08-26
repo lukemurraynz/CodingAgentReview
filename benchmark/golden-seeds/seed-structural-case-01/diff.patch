@@ -1,0 +1,11 @@
+diff --git a/structural/case-01/defect.py b/structural/case-01/defect.py
+new file mode 100644
+--- /dev/null
++++ b/structural/case-01/defect.py
+@@ -0,0 +1,6 @@
++class _NoopEventSubscriber:
++    def handle(self, event): ...
++
++def build_router():
++    subscriber = _NoopEventSubscriber()
++    return {'handler': subscriber.handle}

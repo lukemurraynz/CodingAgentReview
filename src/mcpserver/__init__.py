@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from harness.authz import RepoAccessDenied
 
 from .auth import BearerTokenAuthenticator, MpcAuthError, require_repo
+from .tools_fix import create_fix_propose_tool
 from .tools_review import review_validate_change
 from .tools_state import StateQueryService
 
@@ -38,11 +39,13 @@ def create_mcp_app(
     authenticator: BearerTokenAuthenticator | None = None,
     state_service: StateQueryService | None = None,
     review_tool: ToolHandler | None = None,
+    fix_tool: ToolHandler | None = None,
 ) -> FastAPI:
     api = FastAPI(title="engineering-harness-mcp")
     auth = authenticator or BearerTokenAuthenticator()
     state = state_service or StateQueryService()
     review = review_tool or review_validate_change
+    fix = fix_tool or create_fix_propose_tool()
 
     @api.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -55,6 +58,32 @@ def create_mcp_app(
             {
                 "type": "object",
                 "properties": {"repo_id": {"type": "string"}, "diff": {"type": "string"}},
+                "required": ["repo_id", "diff"],
+            },
+        ),
+        "fix.propose": (
+            fix,
+            "Propose a bounded patch for the provided diff and findings.",
+            {
+                "type": "object",
+                "properties": {
+                    "repo_id": {"type": "string"},
+                    "diff": {"type": "string"},
+                    "findings": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "title": {"type": "string"},
+                                "detail": {"type": "string"},
+                                "path": {"type": "string"},
+                                "line": {"type": "integer"},
+                            },
+                            "required": ["title", "path"],
+                        },
+                    },
+                    "ci_log": {"type": "string"},
+                },
                 "required": ["repo_id", "diff"],
             },
         ),
@@ -140,7 +169,7 @@ def create_mcp_app(
 async def _enforce_repo_scope(
     *, principal, state: StateQueryService, tool_name: str, arguments: dict[str, Any]
 ) -> None:
-    if tool_name in {"review.validate_change", "get_active_findings"}:
+    if tool_name in {"review.validate_change", "fix.propose", "get_active_findings"}:
         repo_id = arguments.get("repo_id")
         if not isinstance(repo_id, str) or not repo_id:
             raise ValueError("repo_id is required")

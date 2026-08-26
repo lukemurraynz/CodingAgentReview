@@ -1,0 +1,7 @@
+[
+  {
+    "path": "security/case-02/defect.py",
+    "title_regex": "(?i)shell.?true|command.?injection|subprocess",
+    "severity": null
+  }
+]
